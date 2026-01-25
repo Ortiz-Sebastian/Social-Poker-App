@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgis/postgis:15-3.3
+    container_name: pocketpoker_db
+    environment:
+      POSTGRES_USER: pocketpoker
+      POSTGRES_PASSWORD: pocketpoker_dev
+      POSTGRES_DB: pocketpoker
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pocketpoker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pocketpoker_network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pocketpoker_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://pocketpoker:pocketpoker_dev@db:5432/pocketpoker
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - ENVIRONMENT=development
+      - CORS_ORIGINS=*
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - pocketpoker_network
+
+volumes:
+  postgres_data:
+
+networks:
+  pocketpoker_network:
+    driver: bridge
+

@@ -1,0 +1,33 @@
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy.orm import relationship
+from geoalchemy2 import Geography
+from datetime import datetime
+
+from app.core.database import Base
+
+
+class Room(Base):
+    __tablename__ = "rooms"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    host_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Location using PostGIS Geography type for geospatial queries
+    # Geography(Point, 4326) stores lat/long as a single point in WGS84 (standard GPS coordinates)
+    location = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+    address = Column(String, nullable=True)
+    
+    # Game details (informational only)
+    buy_in_info = Column(String, nullable=True)  # Informational only, not enforced
+    max_players = Column(Integer, nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    host = relationship("User", back_populates="rooms_owned", foreign_keys=[host_id])
+    join_requests = relationship("JoinRequest", back_populates="room", foreign_keys="JoinRequest.room_id")
+
