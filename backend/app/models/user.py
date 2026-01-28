@@ -11,7 +11,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
+    hashed_password = Column(String, nullable=True)  # Nullable for OAuth users
+    provider = Column(String, nullable=True)  # 'email', 'google', 'apple'
+    provider_id = Column(String, nullable=True)  # OAuth provider user ID
     full_name = Column(String, nullable=True)
     age = Column(Integer, nullable=True)
     isHost = Column(Boolean, default=False)

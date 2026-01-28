@@ -26,15 +26,20 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./backend:/app
+      - ./.env:/app/.env  # Mount .env file from project root
     ports:
       - "8000:8000"
+    env_file:
+      - .env  # Load environment variables from .env file
     environment:
-      - DATABASE_URL=postgresql://pocketpoker:pocketpoker_dev@db:5432/pocketpoker
-      - SECRET_KEY=dev-secret-key-change-in-production
-      - ALGORITHM=HS256
-      - ACCESS_TOKEN_EXPIRE_MINUTES=30
-      - ENVIRONMENT=development
-      - CORS_ORIGINS=*
+      - DATABASE_URL=${DATABASE_URL:-postgresql://pocketpoker:pocketpoker_dev@db:5432/pocketpoker}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - APPLE_CLIENT_ID=${APPLE_CLIENT_ID:-}
     depends_on:
       db:
         condition: service_healthy

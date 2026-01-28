@@ -11,7 +11,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    password: Optional[str] = None  # Optional for OAuth users
 
 
 class UserUpdate(BaseModel):
@@ -31,4 +31,25 @@ class User(UserBase):
 
     class Config:
         from_attributes = True
+
+
+# OAuth schemas
+class GoogleSignIn(BaseModel):
+    id_token: str
+
+
+class AppleSignIn(BaseModel):
+    id_token: str
+    user: Optional[dict] = None  # Apple may send user info on first sign-in
+
+
+class EmailLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: User
 
