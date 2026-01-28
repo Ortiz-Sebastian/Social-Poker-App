@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -21,9 +21,17 @@ class User(Base):
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Cached reputation fields (derived from reviews table, recomputable)
+    avg_rating = Column(Float, default=0.0, nullable=False)
+    review_count = Column(Integer, default=0, nullable=False)
+    games_completed = Column(Integer, default=0, nullable=False)
 
     # Relationships
     rooms_owned = relationship("Room", back_populates="host", foreign_keys="Room.host_id")
     join_requests = relationship("JoinRequest", back_populates="user", foreign_keys="JoinRequest.user_id")
     host_subscription = relationship("HostSubscription", back_populates="user", uselist=False, foreign_keys="HostSubscription.user_id")
+    room_memberships = relationship("RoomMember", back_populates="user", foreign_keys="RoomMember.user_id")
+    reviews_given = relationship("Review", back_populates="reviewer", foreign_keys="Review.reviewer_id")
+    reviews_received = relationship("Review", back_populates="target_user", foreign_keys="Review.target_user_id")
 

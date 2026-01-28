@@ -6,6 +6,19 @@ from app.schemas.host_subscription import (
     HostSubscriptionCreate,
     HostSubscriptionUpdate,
 )
+from app.schemas.room_member import (
+    RoomMember,
+    RoomMemberCreate,
+    RoomMemberUpdate,
+    RoomMemberWithUser,
+)
+from app.schemas.review import (
+    Review,
+    ReviewCreate,
+    ReviewUpdate,
+    ReviewWithUsers,
+    UserReputationSummary,
+)
 
 __all__ = [
     "User",
@@ -20,5 +33,14 @@ __all__ = [
     "HostSubscription",
     "HostSubscriptionCreate",
     "HostSubscriptionUpdate",
+    "RoomMember",
+    "RoomMemberCreate",
+    "RoomMemberUpdate",
+    "RoomMemberWithUser",
+    "Review",
+    "ReviewCreate",
+    "ReviewUpdate",
+    "ReviewWithUsers",
+    "UserReputationSummary",
 ]
 

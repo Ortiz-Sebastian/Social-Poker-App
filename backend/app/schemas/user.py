@@ -28,6 +28,10 @@ class User(UserBase):
     is_verified: bool
     created_at: datetime
     updated_at: datetime
+    # Cached reputation fields (derived, recomputable from reviews)
+    avg_rating: float = 0.0
+    review_count: int = 0
+    games_completed: int = 0
 
     class Config:
         from_attributes = True

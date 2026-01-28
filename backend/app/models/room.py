@@ -30,4 +30,6 @@ class Room(Base):
     # Relationships
     host = relationship("User", back_populates="rooms_owned", foreign_keys=[host_id])
     join_requests = relationship("JoinRequest", back_populates="room", foreign_keys="JoinRequest.room_id")
+    members = relationship("RoomMember", back_populates="room", foreign_keys="RoomMember.room_id")
+    reviews = relationship("Review", back_populates="room", foreign_keys="Review.room_id")
 
