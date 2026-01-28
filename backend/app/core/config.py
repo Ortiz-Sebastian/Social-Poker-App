@@ -13,8 +13,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # OAuth
-    GOOGLE_CLIENT_ID: Optional[str] = None  # Can be comma-separated for multiple clients (web, iOS, etc.)
+    GOOGLE_CLIENT_ID: Optional[str] = None  
     APPLE_CLIENT_ID: Optional[str] = None
+    
+    # Rate Limiting (for location-based endpoints to prevent triangulation attacks)
+    RATE_LIMIT_LOCATION_REQUESTS_PER_MINUTE: int = 30  # Max location queries per minute
+    RATE_LIMIT_PRIVATE_LOCATION_PER_HOUR: int = 100    # Max private location accesses per hour
     
     # Environment
     ENVIRONMENT: str = "development"
@@ -29,14 +33,6 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in v.split(",")]
         return v if isinstance(v, list) else [v]
     
-    @property
-    def google_client_ids(self) -> List[str]:
-        """Parse comma-separated Google client IDs"""
-        if not self.GOOGLE_CLIENT_ID:
-            return []
-        if isinstance(self.GOOGLE_CLIENT_ID, str):
-            return [cid.strip() for cid in self.GOOGLE_CLIENT_ID.split(",") if cid.strip()]
-        return [self.GOOGLE_CLIENT_ID] if isinstance(self.GOOGLE_CLIENT_ID, str) else []
     
     class Config:
         env_file = ".env"

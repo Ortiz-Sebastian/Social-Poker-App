@@ -1,5 +1,5 @@
 from app.schemas.user import User, UserCreate, UserUpdate
-from app.schemas.room import Room, RoomCreate, RoomUpdate
+from app.schemas.room import Room, RoomCreate, RoomUpdate, RoomWithDistance, RoomPublic, RoomPrivate
 from app.schemas.join_request import JoinRequest, JoinRequestCreate, JoinRequestUpdate
 from app.schemas.host_subscription import (
     HostSubscription,
@@ -27,6 +27,9 @@ __all__ = [
     "Room",
     "RoomCreate",
     "RoomUpdate",
+    "RoomWithDistance",
+    "RoomPublic",
+    "RoomPrivate",
     "JoinRequest",
     "JoinRequestCreate",
     "JoinRequestUpdate",

@@ -12,4 +12,5 @@ python-multipart==0.0.6
 geoalchemy2==0.14.3
 google-auth==2.25.2
 cryptography==41.0.7
+slowapi==0.1.9
 

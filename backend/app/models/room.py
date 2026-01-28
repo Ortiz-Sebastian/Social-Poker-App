@@ -14,9 +14,14 @@ class Room(Base):
     description = Column(Text, nullable=True)
     host_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
-    # Location using PostGIS Geography type for geospatial queries
+    # Exact location - only shown to approved members
     # Geography(Point, 4326) stores lat/long as a single point in WGS84 (standard GPS coordinates)
     location = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+    
+    # Public/approximate location - shown to everyone (like Airbnb's obscured location)
+    # Randomly offset from real location by 200-500 meters
+    public_location = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+    
     address = Column(String, nullable=True)
     
     # Game details (informational only)

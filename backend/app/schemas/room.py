@@ -56,3 +56,52 @@ class Room(RoomBase):
     class Config:
         from_attributes = True
 
+
+class RoomPublic(BaseModel):
+    """
+    Room with public/approximate location only.
+    Used for unauthenticated users or non-members.
+    Exact location is hidden until approved.
+    """
+    id: int
+    name: str
+    description: Optional[str] = None
+    # Public/approximate location (offset from real location)
+    public_latitude: Optional[float] = None
+    public_longitude: Optional[float] = None
+    # Address shown as general area only (e.g., "Midtown Manhattan")
+    address: Optional[str] = None
+    buy_in_info: Optional[str] = None
+    max_players: Optional[int] = None
+    host_id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RoomWithDistance(RoomPublic):
+    """Room with distance from search point (in meters) - uses public location"""
+    distance_meters: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+
+class RoomPrivate(Room):
+    """
+    Room with exact location.
+    Only shown to approved room members.
+    """
+    # Exact location (only for members)
+    latitude: Optional[Decimal] = None
+    longitude: Optional[Decimal] = None
+    # Public location also included for reference
+    public_latitude: Optional[float] = None
+    public_longitude: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
