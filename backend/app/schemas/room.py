@@ -2,6 +2,15 @@ from pydantic import BaseModel, field_validator
 from datetime import datetime
 from typing import Optional
 from decimal import Decimal
+from enum import Enum
+
+
+class RoomStatus(str, Enum):
+    """Status of a poker room"""
+    SCHEDULED = "scheduled"
+    ACTIVE = "active"
+    FINISHED = "finished"
+    CANCELLED = "cancelled"
 
 
 class RoomBase(BaseModel):
@@ -44,14 +53,17 @@ class RoomUpdate(BaseModel):
     buy_in_info: Optional[str] = None
     max_players: Optional[int] = None
     is_active: Optional[bool] = None
+    status: Optional[RoomStatus] = None
 
 
 class Room(RoomBase):
     id: int
     host_id: int
+    status: RoomStatus = RoomStatus.SCHEDULED
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    finished_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -74,9 +86,11 @@ class RoomPublic(BaseModel):
     buy_in_info: Optional[str] = None
     max_players: Optional[int] = None
     host_id: int
+    status: RoomStatus = RoomStatus.SCHEDULED
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    finished_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -104,4 +118,9 @@ class RoomPrivate(Room):
 
     class Config:
         from_attributes = True
+
+
+class RoomStatusUpdate(BaseModel):
+    """Schema for updating room status (host only)"""
+    status: RoomStatus
 

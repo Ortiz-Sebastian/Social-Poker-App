@@ -4,11 +4,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.api import api_router
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+
+
 app = FastAPI(
     title="PocketPoker API",
     description="Location-based social app for discovering and organizing private poker games",
     version="0.1.0",
 )
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 
 # CORS middleware
 app.add_middleware(

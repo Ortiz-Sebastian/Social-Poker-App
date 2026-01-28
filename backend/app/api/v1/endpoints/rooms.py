@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 from typing import List, Optional, Union
+from datetime import datetime
 from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_MakePoint, ST_SetSRID
 
 from app.core.database import get_db
-from app.schemas.room import Room, RoomCreate, RoomUpdate, RoomWithDistance, RoomPublic, RoomPrivate
-from app.models.room import Room as RoomModel
+from app.schemas.room import Room, RoomCreate, RoomUpdate, RoomWithDistance, RoomPublic, RoomPrivate, RoomStatusUpdate
+from app.models.room import Room as RoomModel, RoomStatus
 from app.models.room_member import RoomMember as RoomMemberModel, RoomMemberStatus
 from app.models.user import User
 from app.utils.auth import get_current_user
@@ -485,4 +486,100 @@ async def delete_room(
     # Soft delete - set as inactive
     room.is_active = False
     db.commit()
+
+
+@router.patch("/{room_id}/status", response_model=RoomPublic)
+async def update_room_status(
+    room_id: int,
+    status_update: RoomStatusUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update room status (host only).
+    
+    Valid status transitions:
+    - SCHEDULED -> ACTIVE (start the game)
+    - SCHEDULED -> CANCELLED (cancel before starting)
+    - ACTIVE -> FINISHED (end the game - enables reviews)
+    - ACTIVE -> CANCELLED (cancel mid-game)
+    
+    Once FINISHED or CANCELLED, status cannot be changed.
+    """
+    room = db.query(RoomModel).filter(RoomModel.id == room_id).first()
+    
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+    
+    # Only the host can update room status
+    if room.host_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room host can update room status"
+        )
+    
+    # Validate status transitions
+    current_status = room.status
+    new_status = RoomStatus(status_update.status.value)
+    
+    # Cannot change from terminal states
+    if current_status in [RoomStatus.FINISHED, RoomStatus.CANCELLED]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot change status from {current_status.value}"
+        )
+    
+    # Define valid transitions
+    valid_transitions = {
+        RoomStatus.SCHEDULED: [RoomStatus.ACTIVE, RoomStatus.CANCELLED],
+        RoomStatus.ACTIVE: [RoomStatus.FINISHED, RoomStatus.CANCELLED],
+    }
+    
+    if new_status not in valid_transitions.get(current_status, []):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status transition from {current_status.value} to {new_status.value}"
+        )
+    
+    # Update status
+    room.status = new_status
+    
+    # Set finished_at timestamp if marking as finished
+    if new_status == RoomStatus.FINISHED:
+        room.finished_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(room)
+    
+    # Build response with public location only
+    response = {
+        "id": room.id,
+        "name": room.name,
+        "description": room.description,
+        "public_latitude": None,
+        "public_longitude": None,
+        "address": room.address,
+        "buy_in_info": room.buy_in_info,
+        "max_players": room.max_players,
+        "host_id": room.host_id,
+        "status": room.status,
+        "is_active": room.is_active,
+        "created_at": room.created_at,
+        "updated_at": room.updated_at,
+        "finished_at": room.finished_at
+    }
+    
+    if room.public_location:
+        point_text = db.execute(
+            text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
+            {"id": room.id}
+        ).fetchone()
+        if point_text:
+            response["public_longitude"] = float(point_text[0])
+            response["public_latitude"] = float(point_text[1])
+    
+    return RoomPublic(**response)
 
