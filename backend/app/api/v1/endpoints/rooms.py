@@ -48,6 +48,7 @@ async def create_room(
         address=room_data.address,
         buy_in_info=room_data.buy_in_info,
         max_players=room_data.max_players,
+        skill_level=room_data.skill_level,
         host_id=current_user.id,
         is_active=True
     )
@@ -80,10 +81,13 @@ async def create_room(
         "address": room.address,
         "buy_in_info": room.buy_in_info,
         "max_players": room.max_players,
+        "skill_level": room.skill_level,
         "host_id": room.host_id,
+        "status": room.status,
         "is_active": room.is_active,
         "created_at": room.created_at,
-        "updated_at": room.updated_at
+        "updated_at": room.updated_at,
+        "finished_at": room.finished_at
     }
     
     # Extract public location coordinates
@@ -185,10 +189,13 @@ async def list_rooms(
                 "address": room.address,
                 "buy_in_info": room.buy_in_info,
                 "max_players": room.max_players,
+                "skill_level": room.skill_level,
                 "host_id": room.host_id,
+                "status": room.status,
                 "is_active": room.is_active,
                 "created_at": room.created_at,
                 "updated_at": room.updated_at,
+                "finished_at": room.finished_at,
                 "distance_meters": safe_distance
             }
             
@@ -222,10 +229,13 @@ async def list_rooms(
                 "address": room.address,
                 "buy_in_info": room.buy_in_info,
                 "max_players": room.max_players,
+                "skill_level": room.skill_level,
                 "host_id": room.host_id,
+                "status": room.status,
                 "is_active": room.is_active,
                 "created_at": room.created_at,
                 "updated_at": room.updated_at,
+                "finished_at": room.finished_at,
                 "distance_meters": None
             }
             
@@ -269,10 +279,13 @@ async def get_room(room_id: int, db: Session = Depends(get_db)):
         "address": room.address,
         "buy_in_info": room.buy_in_info,
         "max_players": room.max_players,
+        "skill_level": room.skill_level,
         "host_id": room.host_id,
+        "status": room.status,
         "is_active": room.is_active,
         "created_at": room.created_at,
-        "updated_at": room.updated_at
+        "updated_at": room.updated_at,
+        "finished_at": room.finished_at
     }
     
     # Extract PUBLIC location coordinates
@@ -349,10 +362,13 @@ async def get_room_private(
         "address": room.address,
         "buy_in_info": room.buy_in_info,
         "max_players": room.max_players,
+        "skill_level": room.skill_level,
         "host_id": room.host_id,
+        "status": room.status,
         "is_active": room.is_active,
         "created_at": room.created_at,
-        "updated_at": room.updated_at
+        "updated_at": room.updated_at,
+        "finished_at": room.finished_at
     }
     
     # Extract EXACT location coordinates
@@ -443,10 +459,13 @@ async def update_room(
         "address": room.address,
         "buy_in_info": room.buy_in_info,
         "max_players": room.max_players,
+        "skill_level": room.skill_level,
         "host_id": room.host_id,
+        "status": room.status,
         "is_active": room.is_active,
         "created_at": room.created_at,
-        "updated_at": room.updated_at
+        "updated_at": room.updated_at,
+        "finished_at": room.finished_at
     }
     
     if room.public_location:
@@ -564,6 +583,7 @@ async def update_room_status(
         "address": room.address,
         "buy_in_info": room.buy_in_info,
         "max_players": room.max_players,
+        "skill_level": room.skill_level,
         "host_id": room.host_id,
         "status": room.status,
         "is_active": room.is_active,

@@ -8,6 +8,7 @@ from app.models.room_member import RoomMemberStatus
 class RoomMemberBase(BaseModel):
     is_host: bool = False
     status: RoomMemberStatus = RoomMemberStatus.ACTIVE
+    queue_position: Optional[int] = None  # Position in waitlist (1 = first in line)
 
 
 class RoomMemberCreate(RoomMemberBase):
@@ -18,6 +19,7 @@ class RoomMemberCreate(RoomMemberBase):
 class RoomMemberUpdate(BaseModel):
     status: Optional[RoomMemberStatus] = None
     is_host: Optional[bool] = None
+    queue_position: Optional[int] = None
 
 
 class RoomMember(RoomMemberBase):

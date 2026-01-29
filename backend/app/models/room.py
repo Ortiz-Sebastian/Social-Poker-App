@@ -5,6 +5,7 @@ from datetime import datetime
 import enum
 
 from app.core.database import Base
+from app.models.enums import SkillLevel
 
 
 class RoomStatus(str, enum.Enum):
@@ -25,6 +26,9 @@ class Room(Base):
     
     # Room status - controls when reviews can be submitted
     status = Column(SQLEnum(RoomStatus), default=RoomStatus.SCHEDULED, nullable=False, index=True)
+    
+    # Skill level - recommended/required skill level for players
+    skill_level = Column(SQLEnum(SkillLevel), nullable=True, index=True)
     
     # Exact location - only shown to approved members
     # Geography(Point, 4326) stores lat/long as a single point in WGS84 (standard GPS coordinates)

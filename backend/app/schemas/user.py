@@ -1,6 +1,15 @@
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from typing import Optional
+from enum import Enum
+
+
+class SkillLevel(str, Enum):
+    """Poker skill level for users and rooms"""
+    BEGINNER = "beginner"
+    INTERMEDIATE = "intermediate"
+    ADVANCED = "advanced"
+    EXPERT = "expert"
 
 
 class UserBase(BaseModel):
@@ -8,6 +17,7 @@ class UserBase(BaseModel):
     username: str
     full_name: Optional[str] = None
     age: Optional[int] = None
+    skill_level: Optional[SkillLevel] = None
 
 
 class UserCreate(UserBase):
@@ -19,6 +29,7 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     full_name: Optional[str] = None
     age: Optional[int] = None
+    skill_level: Optional[SkillLevel] = None
     password: Optional[str] = None
 
 

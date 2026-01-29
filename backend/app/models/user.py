@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
 from app.core.database import Base
+from app.models.enums import SkillLevel
 
 
 class User(Base):
@@ -16,6 +17,7 @@ class User(Base):
     provider_id = Column(String, nullable=True)  # OAuth provider user ID
     full_name = Column(String, nullable=True)
     age = Column(Integer, nullable=True)
+    skill_level = Column(SQLEnum(SkillLevel), nullable=True, index=True)  # User's self-reported poker skill level
     isHost = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)

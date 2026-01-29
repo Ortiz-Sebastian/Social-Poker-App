@@ -13,6 +13,14 @@ class RoomStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class SkillLevel(str, Enum):
+    """Poker skill level for users and rooms"""
+    BEGINNER = "beginner"
+    INTERMEDIATE = "intermediate"
+    ADVANCED = "advanced"
+    EXPERT = "expert"
+
+
 class RoomBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -22,6 +30,7 @@ class RoomBase(BaseModel):
     address: Optional[str] = None
     buy_in_info: Optional[str] = None  # Informational only
     max_players: Optional[int] = None
+    skill_level: Optional[SkillLevel] = None  # Recommended skill level for the room
 
     @field_validator('latitude')
     @classmethod
@@ -52,6 +61,7 @@ class RoomUpdate(BaseModel):
     address: Optional[str] = None
     buy_in_info: Optional[str] = None
     max_players: Optional[int] = None
+    skill_level: Optional[SkillLevel] = None
     is_active: Optional[bool] = None
     status: Optional[RoomStatus] = None
 
@@ -85,6 +95,7 @@ class RoomPublic(BaseModel):
     address: Optional[str] = None
     buy_in_info: Optional[str] = None
     max_players: Optional[int] = None
+    skill_level: Optional[SkillLevel] = None
     host_id: int
     status: RoomStatus = RoomStatus.SCHEDULED
     is_active: bool
