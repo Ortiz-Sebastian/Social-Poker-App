@@ -507,6 +507,189 @@ async def delete_room(
     db.commit()
 
 
+@router.get("/{room_id}/members")
+async def get_room_members(
+    room_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get room members (host or member only).
+    Returns list of active and waitlisted members.
+    """
+    room = db.query(RoomModel).filter(RoomModel.id == room_id).first()
+    
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+    
+    # Check if user is host or a member
+    is_host = room.host_id == current_user.id
+    is_member = db.query(RoomMemberModel).filter(
+        RoomMemberModel.room_id == room_id,
+        RoomMemberModel.user_id == current_user.id,
+        RoomMemberModel.status.in_([RoomMemberStatus.ACTIVE, RoomMemberStatus.WAITLISTED])
+    ).first() is not None
+    
+    if not is_host and not is_member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only room members can view the member list"
+        )
+    
+    # Get all active and waitlisted members
+    members = db.query(RoomMemberModel).filter(
+        RoomMemberModel.room_id == room_id,
+        RoomMemberModel.status.in_([RoomMemberStatus.ACTIVE, RoomMemberStatus.WAITLISTED])
+    ).all()
+    
+    # Return member info
+    result = []
+    for member in members:
+        user = db.query(User).filter(User.id == member.user_id).first()
+        result.append({
+            "id": member.id,
+            "user_id": member.user_id,
+            "username": user.username if user else "Unknown",
+            "is_host": member.is_host,
+            "status": member.status.value,
+            "queue_position": member.queue_position,
+            "joined_at": member.joined_at
+        })
+    
+    return result
+
+
+@router.post("/{room_id}/leave")
+async def leave_room(
+    room_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Leave a room (member only, not host).
+    """
+    room = db.query(RoomModel).filter(RoomModel.id == room_id).first()
+    
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+    
+    # Host cannot leave their own room
+    if room.host_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Host cannot leave their own room. Delete or cancel the room instead."
+        )
+    
+    # Find user's membership
+    membership = db.query(RoomMemberModel).filter(
+        RoomMemberModel.room_id == room_id,
+        RoomMemberModel.user_id == current_user.id,
+        RoomMemberModel.status.in_([RoomMemberStatus.ACTIVE, RoomMemberStatus.WAITLISTED])
+    ).first()
+    
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are not a member of this room"
+        )
+    
+    # Update membership status
+    old_status = membership.status
+    old_queue_position = membership.queue_position
+    membership.status = RoomMemberStatus.LEFT
+    membership.left_at = datetime.utcnow()
+    membership.queue_position = None
+    
+    # If leaving from waitlist, reorder the queue
+    if old_status == RoomMemberStatus.WAITLISTED and old_queue_position:
+        db.query(RoomMemberModel).filter(
+            RoomMemberModel.room_id == room_id,
+            RoomMemberModel.status == RoomMemberStatus.WAITLISTED,
+            RoomMemberModel.queue_position > old_queue_position
+        ).update({
+            RoomMemberModel.queue_position: RoomMemberModel.queue_position - 1
+        })
+    
+    db.commit()
+    
+    return {"message": "Successfully left the room"}
+
+
+@router.post("/{room_id}/members/{member_id}/kick")
+async def kick_member(
+    room_id: int,
+    member_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Kick a member from the room (host only).
+    """
+    room = db.query(RoomModel).filter(RoomModel.id == room_id).first()
+    
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+    
+    # Only host can kick members
+    if room.host_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room host can kick members"
+        )
+    
+    # Find the membership record
+    membership = db.query(RoomMemberModel).filter(
+        RoomMemberModel.id == member_id,
+        RoomMemberModel.room_id == room_id,
+        RoomMemberModel.status.in_([RoomMemberStatus.ACTIVE, RoomMemberStatus.WAITLISTED])
+    ).first()
+    
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found"
+        )
+    
+    # Cannot kick the host
+    if membership.is_host:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot kick the host"
+        )
+    
+    # Update membership status
+    old_queue_position = membership.queue_position
+    membership.status = RoomMemberStatus.KICKED
+    membership.left_at = datetime.utcnow()
+    membership.queue_position = None
+    
+    # If kicking from waitlist, reorder the queue
+    if old_queue_position:
+        db.query(RoomMemberModel).filter(
+            RoomMemberModel.room_id == room_id,
+            RoomMemberModel.status == RoomMemberStatus.WAITLISTED,
+            RoomMemberModel.queue_position > old_queue_position
+        ).update({
+            RoomMemberModel.queue_position: RoomMemberModel.queue_position - 1
+        })
+    
+    db.commit()
+    
+    # Get user info for response
+    kicked_user = db.query(User).filter(User.id == membership.user_id).first()
+    
+    return {"message": f"Successfully kicked {kicked_user.username if kicked_user else 'user'} from the room"}
+
+
 @router.patch("/{room_id}/status", response_model=RoomPublic)
 async def update_room_status(
     room_id: int,

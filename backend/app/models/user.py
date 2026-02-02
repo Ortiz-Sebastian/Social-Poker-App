@@ -17,7 +17,13 @@ class User(Base):
     provider_id = Column(String, nullable=True)  # OAuth provider user ID
     full_name = Column(String, nullable=True)
     age = Column(Integer, nullable=True)
-    skill_level = Column(SQLEnum(SkillLevel), nullable=True, index=True)  # User's self-reported poker skill level
+    # User's self-reported poker skill level
+    # Use values_callable to ensure we use lowercase enum values to match database
+    skill_level = Column(
+        SQLEnum(SkillLevel, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+        index=True
+    )
     isHost = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)

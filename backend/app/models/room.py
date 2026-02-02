@@ -25,10 +25,21 @@ class Room(Base):
     host_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
     # Room status - controls when reviews can be submitted
-    status = Column(SQLEnum(RoomStatus), default=RoomStatus.SCHEDULED, nullable=False, index=True)
+    # Use values_callable to ensure we use lowercase enum values to match database
+    status = Column(
+        SQLEnum(RoomStatus, values_callable=lambda x: [e.value for e in x]),
+        default=RoomStatus.SCHEDULED,
+        nullable=False,
+        index=True
+    )
     
     # Skill level - recommended/required skill level for players
-    skill_level = Column(SQLEnum(SkillLevel), nullable=True, index=True)
+    # Use values_callable to ensure we use lowercase enum values to match database
+    skill_level = Column(
+        SQLEnum(SkillLevel, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+        index=True
+    )
     
     # Exact location - only shown to approved members
     # Geography(Point, 4326) stores lat/long as a single point in WGS84 (standard GPS coordinates)

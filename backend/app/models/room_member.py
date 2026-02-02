@@ -21,7 +21,12 @@ class RoomMember(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
     is_host = Column(Boolean, default=False, nullable=False)
-    status = Column(SQLEnum(RoomMemberStatus), default=RoomMemberStatus.ACTIVE, nullable=False)
+    # Use values_callable to ensure we use lowercase enum values to match database
+    status = Column(
+        SQLEnum(RoomMemberStatus, values_callable=lambda x: [e.value for e in x]),
+        default=RoomMemberStatus.ACTIVE,
+        nullable=False
+    )
     
     # Queue position for waitlisted members (1 = first in line, null = not waitlisted)
     queue_position = Column(Integer, nullable=True, index=True)
