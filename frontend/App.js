@@ -1,15 +1,15 @@
 import React from 'react';
-import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, ActivityIndicator, View } from 'react-native';
+import { Text, View, ActivityIndicator, StyleSheet } from 'react-native';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import {
   LoginScreen,
   RegisterScreen,
   RoomsScreen,
+  SearchScreen,
   RoomDetailScreen,
   CreateRoomScreen,
   ManageRequestsScreen,
@@ -22,7 +22,7 @@ import {
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Tab Navigator for authenticated users
+// Main tabs for authenticated users
 const MainTabs = () => {
   return (
     <Tab.Navigator
@@ -30,33 +30,40 @@ const MainTabs = () => {
         tabBarActiveTintColor: '#4a90d9',
         tabBarInactiveTintColor: '#999',
         tabBarStyle: {
-          paddingBottom: 5,
-          paddingTop: 5,
-          height: 60,
+          backgroundColor: '#fff',
+          borderTopWidth: 1,
+          borderTopColor: '#eee',
         },
         headerStyle: {
           backgroundColor: '#1a1a2e',
         },
         headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: '600',
-        },
       }}
     >
+      <Tab.Screen
+        name="SearchTab"
+        component={SearchScreen}
+        options={{
+          title: 'Search',
+          headerShown: false,
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20 }}>🔍</Text>,
+        }}
+      />
       <Tab.Screen
         name="RoomsTab"
         component={RoomsScreen}
         options={{
-          title: 'Rooms',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>🏠</Text>,
+          title: 'My Rooms',
+          headerShown: false,
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20 }}>🎴</Text>,
         }}
       />
       <Tab.Screen
-        name="RequestsTab"
+        name="MyRequestsTab"
         component={MyRequestsScreen}
         options={{
-          title: 'My Requests',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>📋</Text>,
+          title: 'Requests',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20 }}>📩</Text>,
         }}
       />
       <Tab.Screen
@@ -64,29 +71,15 @@ const MainTabs = () => {
         component={ProfileScreen}
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>👤</Text>,
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20 }}>👤</Text>,
         }}
       />
     </Tab.Navigator>
   );
 };
 
-// Auth Stack for unauthenticated users
+// Auth stack for unauthenticated users
 const AuthStack = () => {
-  return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-    </Stack.Navigator>
-  );
-};
-
-// Main Stack for authenticated users
-const MainStack = () => {
   return (
     <Stack.Navigator
       screenOptions={{
@@ -94,9 +87,31 @@ const MainStack = () => {
           backgroundColor: '#1a1a2e',
         },
         headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: '600',
+      }}
+    >
+      <Stack.Screen
+        name="Login"
+        component={LoginScreen}
+        options={{ title: 'Sign In' }}
+      />
+      <Stack.Screen
+        name="Register"
+        component={RegisterScreen}
+        options={{ title: 'Create Account' }}
+      />
+    </Stack.Navigator>
+  );
+};
+
+// Main app stack for authenticated users
+const AppStack = () => {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: '#1a1a2e',
         },
+        headerTintColor: '#fff',
       }}
     >
       <Stack.Screen
@@ -122,7 +137,7 @@ const MainStack = () => {
       <Stack.Screen
         name="Waitlist"
         component={WaitlistScreen}
-        options={{ title: 'Manage Waitlist' }}
+        options={{ title: 'Waitlist' }}
       />
       <Stack.Screen
         name="WriteReview"
@@ -133,31 +148,50 @@ const MainStack = () => {
   );
 };
 
-// Root Navigator
+// Loading screen component
+const LoadingScreen = () => (
+  <View style={loadingStyles.container}>
+    <ActivityIndicator size="large" color="#4a90d9" />
+    <Text style={loadingStyles.text}>Loading...</Text>
+  </View>
+);
+
+const loadingStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a2e',
+  },
+  text: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#fff',
+  },
+});
+
+// Root navigator that switches between auth and app stacks
 const RootNavigator = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { user, loading } = useAuth();
+
+  console.log('RootNavigator: loading=', loading, 'user=', user ? 'exists' : 'null');
 
   if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a1a2e' }}>
-        <ActivityIndicator size="large" color="#4a90d9" />
-        <Text style={{ color: '#fff', marginTop: 16 }}>Loading...</Text>
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   return (
     <NavigationContainer>
-      {isAuthenticated ? <MainStack /> : <AuthStack />}
+      {user ? <AppStack /> : <AuthStack />}
     </NavigationContainer>
   );
 };
 
-// App Entry Point
+// Main App component
 export default function App() {
+  console.log('App component mounting...');
   return (
     <AuthProvider>
-      <StatusBar style="light" />
       <RootNavigator />
     </AuthProvider>
   );

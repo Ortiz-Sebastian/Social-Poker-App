@@ -1,6 +1,7 @@
 export { LoginScreen } from './LoginScreen';
 export { RegisterScreen } from './RegisterScreen';
 export { RoomsScreen } from './RoomsScreen';
+export { SearchScreen } from './SearchScreen';
 export { RoomDetailScreen } from './RoomDetailScreen';
 export { CreateRoomScreen } from './CreateRoomScreen';
 export { ManageRequestsScreen } from './ManageRequestsScreen';

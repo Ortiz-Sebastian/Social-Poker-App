@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
+import * as Location from 'expo-location';
 import { Button, Input } from '../components';
 import { roomsApi } from '../api';
 
@@ -22,6 +23,74 @@ export const CreateRoomScreen = ({ navigation }) => {
   const [buyInInfo, setBuyInInfo] = useState('');
   const [skillLevel, setSkillLevel] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
+
+  // Get current GPS location
+  const useMyLocation = async () => {
+    setLocationLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Please enable location permissions to use this feature.');
+        return;
+      }
+      
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      
+      setLatitude(currentLocation.coords.latitude.toString());
+      setLongitude(currentLocation.coords.longitude.toString());
+      
+      console.log('Room location set from GPS:', {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      });
+      
+      Alert.alert('Success', 'Location set from GPS!');
+    } catch (err) {
+      console.error('Location error:', err);
+      Alert.alert('Error', 'Could not get your location.');
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  // Geocode address to coordinates
+  const geocodeAddress = async () => {
+    if (!address || address.trim().length < 5) {
+      Alert.alert('Error', 'Please enter a valid address first');
+      return;
+    }
+    
+    setLocationLoading(true);
+    try {
+      const results = await Location.geocodeAsync(address);
+      
+      if (results && results.length > 0) {
+        const { latitude: lat, longitude: lon } = results[0];
+        
+        setLatitude(lat.toString());
+        setLongitude(lon.toString());
+        
+        console.log('Address geocoded:', {
+          address: address,
+          latitude: lat,
+          longitude: lon,
+        });
+        
+        Alert.alert('Success', 'Address converted to coordinates!');
+      } else {
+        Alert.alert('Not Found', 'Could not find coordinates for this address. Try a more specific address or use GPS.');
+      }
+    } catch (err) {
+      console.error('Geocoding error:', err);
+      Alert.alert('Error', 'Failed to geocode address. Try using GPS instead.');
+    } finally {
+      setLocationLoading(false);
+    }
+  };
 
   const handleCreate = async () => {
     if (!name) {
@@ -29,18 +98,55 @@ export const CreateRoomScreen = ({ navigation }) => {
       return;
     }
 
+    // Auto-geocode address if no coordinates but address exists
+    let finalLat = latitude ? parseFloat(latitude) : null;
+    let finalLon = longitude ? parseFloat(longitude) : null;
+
+    if (!finalLat && !finalLon && address && address.trim().length >= 5) {
+      setLoading(true);
+      try {
+        const results = await Location.geocodeAsync(address);
+        if (results && results.length > 0) {
+          finalLat = results[0].latitude;
+          finalLon = results[0].longitude;
+          console.log('Auto-geocoded on submit:', { address, lat: finalLat, lon: finalLon });
+        }
+      } catch (err) {
+        console.error('Auto-geocode failed:', err);
+      }
+    }
+
+    if (!finalLat || !finalLon) {
+      Alert.alert(
+        'No Location',
+        'Your room needs a location to appear in searches. Use GPS or enter an address.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Create Anyway', onPress: () => createRoom(null, null) },
+        ]
+      );
+      setLoading(false);
+      return;
+    }
+
+    createRoom(finalLat, finalLon);
+  };
+
+  const createRoom = async (lat, lon) => {
     setLoading(true);
     try {
       const roomData = {
         name,
         description: description || null,
         address: address || null,
-        latitude: latitude ? parseFloat(latitude) : null,
-        longitude: longitude ? parseFloat(longitude) : null,
+        latitude: lat,
+        longitude: lon,
         max_players: maxPlayers ? parseInt(maxPlayers, 10) : null,
         buy_in_info: buyInInfo || null,
         skill_level: skillLevel,
       };
+
+      console.log('Creating room with data:', roomData);
 
       const room = await roomsApi.create(roomData);
       Alert.alert('Success', 'Room created!', [
@@ -52,6 +158,8 @@ export const CreateRoomScreen = ({ navigation }) => {
       setLoading(false);
     }
   };
+
+  const hasLocation = latitude && longitude;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -72,32 +180,45 @@ export const CreateRoomScreen = ({ navigation }) => {
         multiline
       />
 
-      <Input
-        label="Address"
-        value={address}
-        onChangeText={setAddress}
-        placeholder="123 Main St, City"
-      />
+      {/* Location Section */}
+      <View style={styles.locationSection}>
+        <Text style={styles.sectionTitle}>Location</Text>
+        <Text style={styles.sectionHint}>
+          Required for your room to appear in nearby searches
+        </Text>
 
-      <View style={styles.row}>
-        <View style={styles.halfInput}>
-          <Input
-            label="Latitude"
-            value={latitude}
-            onChangeText={setLatitude}
-            placeholder="40.7128"
-            keyboardType="decimal-pad"
+        <Input
+          label="Address"
+          value={address}
+          onChangeText={setAddress}
+          placeholder="123 Main St, San Francisco, CA"
+        />
+
+        <View style={styles.locationButtons}>
+          <Button
+            title="📍 Use GPS"
+            onPress={useMyLocation}
+            variant={hasLocation ? "secondary" : "primary"}
+            loading={locationLoading}
+            style={styles.locationBtn}
+          />
+          <Button
+            title="🔍 Geocode Address"
+            onPress={geocodeAddress}
+            variant="secondary"
+            loading={locationLoading}
+            disabled={!address}
+            style={styles.locationBtn}
           />
         </View>
-        <View style={styles.halfInput}>
-          <Input
-            label="Longitude"
-            value={longitude}
-            onChangeText={setLongitude}
-            placeholder="-74.0060"
-            keyboardType="decimal-pad"
-          />
-        </View>
+
+        {hasLocation && (
+          <View style={styles.locationConfirmed}>
+            <Text style={styles.locationConfirmedText}>
+              ✓ Location set ({parseFloat(latitude).toFixed(4)}, {parseFloat(longitude).toFixed(4)})
+            </Text>
+          </View>
+        )}
       </View>
 
       <Input
@@ -156,13 +277,44 @@ const styles = StyleSheet.create({
     color: '#1a1a2e',
     marginBottom: 24,
   },
-  row: {
-    flexDirection: 'row',
-    marginHorizontal: -8,
+  locationSection: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
-  halfInput: {
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  sectionHint: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 12,
+  },
+  locationButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  locationBtn: {
     flex: 1,
-    paddingHorizontal: 8,
+  },
+  locationConfirmed: {
+    marginTop: 12,
+    padding: 10,
+    backgroundColor: '#e8f5e9',
+    borderRadius: 8,
+  },
+  locationConfirmedText: {
+    color: '#2e7d32',
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   label: {
     fontSize: 14,

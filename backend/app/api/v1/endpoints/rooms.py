@@ -103,10 +103,77 @@ async def create_room(
     return RoomPublic(**response)
 
 
+@router.get("/my-rooms", response_model=List[RoomPublic])
+async def get_my_rooms(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all rooms the current user is hosting or is an active member of.
+    
+    Returns rooms where:
+    - User is the host, OR
+    - User is an active member (approved status)
+    
+    Includes both past and upcoming games.
+    """
+    from sqlalchemy import or_
+    
+    # Get room IDs where user is an active member
+    member_room_ids = db.query(RoomMemberModel.room_id).filter(
+        RoomMemberModel.user_id == current_user.id,
+        RoomMemberModel.status == RoomMemberStatus.ACTIVE
+    ).subquery()
+    
+    # Query rooms where user is host OR active member
+    rooms = db.query(RoomModel).filter(
+        or_(
+            RoomModel.host_id == current_user.id,
+            RoomModel.id.in_(member_room_ids)
+        )
+    ).order_by(RoomModel.created_at.desc()).all()
+    
+    result = []
+    for room in rooms:
+        room_data = {
+            "id": room.id,
+            "name": room.name,
+            "description": room.description,
+            "public_latitude": None,
+            "public_longitude": None,
+            "address": room.address,
+            "buy_in_info": room.buy_in_info,
+            "max_players": room.max_players,
+            "skill_level": room.skill_level,
+            "host_id": room.host_id,
+            "status": room.status,
+            "is_active": room.is_active,
+            "created_at": room.created_at,
+            "updated_at": room.updated_at,
+            "finished_at": room.finished_at,
+            "is_host": room.host_id == current_user.id,
+        }
+        
+        # Extract public location coordinates
+        if room.public_location:
+            point_text = db.execute(
+                text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
+                {"id": room.id}
+            ).fetchone()
+            if point_text:
+                room_data["public_longitude"] = float(point_text[0])
+                room_data["public_latitude"] = float(point_text[1])
+        
+        result.append(RoomPublic(**room_data))
+    
+    return result
+
+
 @router.get("/", response_model=List[RoomWithDistance])
 async def list_rooms(
     latitude: Optional[float] = Query(None, ge=-90, le=90, description="User's latitude"),
     longitude: Optional[float] = Query(None, ge=-180, le=180, description="User's longitude"),
+    address: Optional[str] = Query(None, min_length=2, max_length=200, description="Address to search (geocoded to coordinates)"),
     radius: Optional[float] = Query(None, gt=0, description="Search radius in meters"),
     skip: int = Query(0, ge=0, description="Number of results to skip"),
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_RESULTS, description="Maximum results to return"),
@@ -115,13 +182,32 @@ async def list_rooms(
     """
     List active rooms with optional geospatial filtering.
     
+    Location can be provided via:
+    - latitude/longitude coordinates (preferred, faster)
+    - address string (city, zipcode, or full address - will be geocoded)
+    
     - Queries using REAL location for accurate nearby results
     - Returns PUBLIC/APPROXIMATE location in response (exact location hidden until approved)
     - Radius is capped at 100km (100,000 meters)
     - Results are capped at 50 per page
     """
+    from app.utils.geocoding import geocode_address
+    
     # Cap the limit
     limit = min(limit, MAX_RESULTS)
+    
+    # If address is provided but no coordinates, geocode the address
+    if address and latitude is None and longitude is None:
+        coords = geocode_address(address)
+        if coords:
+            latitude, longitude = coords
+            print(f"Geocoded '{address}' -> lat={latitude}, lon={longitude}")
+        else:
+            # Could not geocode address - return empty results or raise error
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Could not find location for address: {address}"
+            )
     
     # Base query for active rooms
     query = db.query(RoomModel).filter(RoomModel.is_active == True)

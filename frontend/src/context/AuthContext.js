@@ -14,16 +14,29 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const checkAuth = async () => {
+    console.log('AuthContext: Checking auth...');
     try {
       const token = await getAuthToken();
+      console.log('AuthContext: Token exists:', !!token);
       if (token) {
-        const userData = await usersApi.getMe();
-        setUser(userData);
+        try {
+          const userData = await usersApi.getMe();
+          console.log('AuthContext: Got user data:', userData?.username);
+          setUser(userData);
+        } catch (userErr) {
+          console.log('AuthContext: Failed to get user, clearing token');
+          await clearAuthToken();
+        }
       }
     } catch (err) {
-      console.log('No valid session');
-      await clearAuthToken();
+      console.log('AuthContext: No valid session', err);
+      try {
+        await clearAuthToken();
+      } catch (clearErr) {
+        console.log('AuthContext: Error clearing token', clearErr);
+      }
     } finally {
+      console.log('AuthContext: Setting loading to false');
       setLoading(false);
     }
   };

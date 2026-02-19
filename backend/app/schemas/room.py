@@ -102,6 +102,8 @@ class RoomPublic(BaseModel):
     created_at: datetime
     updated_at: datetime
     finished_at: Optional[datetime] = None
+    # Flag to indicate if the current user is the host (set in API responses)
+    is_host: Optional[bool] = None
 
     class Config:
         from_attributes = True
