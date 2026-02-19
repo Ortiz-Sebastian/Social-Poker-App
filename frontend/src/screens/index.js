@@ -9,3 +9,7 @@ export { WaitlistScreen } from './WaitlistScreen';
 export { MyRequestsScreen } from './MyRequestsScreen';
 export { ProfileScreen } from './ProfileScreen';
 export { WriteReviewScreen } from './WriteReviewScreen';
+export { EditProfileScreen } from './EditProfileScreen';
+export { UserProfileScreen } from './UserProfileScreen';
+export { UserReviewsScreen } from './UserReviewsScreen';
+export { RoomReviewsScreen } from './RoomReviewsScreen';

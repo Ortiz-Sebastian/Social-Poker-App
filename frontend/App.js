@@ -17,6 +17,10 @@ import {
   MyRequestsScreen,
   ProfileScreen,
   WriteReviewScreen,
+  EditProfileScreen,
+  UserProfileScreen,
+  UserReviewsScreen,
+  RoomReviewsScreen,
 } from './src/screens';
 
 const Stack = createNativeStackNavigator();
@@ -143,6 +147,26 @@ const AppStack = () => {
         name="WriteReview"
         component={WriteReviewScreen}
         options={{ title: 'Write Review' }}
+      />
+      <Stack.Screen
+        name="EditProfile"
+        component={EditProfileScreen}
+        options={{ title: 'Edit Profile' }}
+      />
+      <Stack.Screen
+        name="UserProfile"
+        component={UserProfileScreen}
+        options={{ title: 'Player Profile' }}
+      />
+      <Stack.Screen
+        name="UserReviews"
+        component={UserReviewsScreen}
+        options={{ title: 'Reviews' }}
+      />
+      <Stack.Screen
+        name="RoomReviews"
+        component={RoomReviewsScreen}
+        options={{ title: 'Room Reviews' }}
       />
     </Stack.Navigator>
   );

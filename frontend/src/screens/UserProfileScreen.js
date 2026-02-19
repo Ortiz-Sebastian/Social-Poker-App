@@ -1,39 +1,48 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, RefreshControl } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Card, CardTitle, CardBody, Button, Badge } from '../components';
+import { usersApi, reputationApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { reputationApi } from '../api';
 
-export const ProfileScreen = ({ navigation }) => {
-  const { user, logout, refreshUser } = useAuth();
+export const UserProfileScreen = ({ route, navigation }) => {
+  const { userId } = route.params;
+  const { user: currentUser } = useAuth();
+  const [profile, setProfile] = useState(null);
   const [reputation, setReputation] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadReputation = async () => {
-    if (!user) return;
+  const isOwnProfile = currentUser?.id === userId;
+
+  useEffect(() => {
+    loadProfile();
+  }, [userId]);
+
+  const loadProfile = async () => {
     try {
-      const data = await reputationApi.getUserReputation(user.id);
-      setReputation(data);
+      const [userData, repData] = await Promise.allSettled([
+        usersApi.get(userId),
+        reputationApi.getUserReputation(userId),
+      ]);
+
+      if (userData.status === 'fulfilled') {
+        setProfile(userData.value);
+      } else {
+        Alert.alert('Error', 'User not found');
+        navigation.goBack();
+        return;
+      }
+
+      if (repData.status === 'fulfilled') {
+        setReputation(repData.value);
+      }
     } catch (err) {
-      console.log('No reputation data yet');
+      Alert.alert('Error', 'Failed to load profile');
+      navigation.goBack();
     } finally {
+      setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      refreshUser();
-      loadReputation();
-    }, [user?.id])
-  );
-
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
   };
 
   const renderStars = (rating) => {
@@ -44,7 +53,7 @@ export const ProfileScreen = ({ navigation }) => {
     return stars.join('');
   };
 
-  if (!user) {
+  if (loading || !profile) {
     return (
       <View style={styles.loading}>
         <Text>Loading...</Text>
@@ -56,30 +65,26 @@ export const ProfileScreen = ({ navigation }) => {
     <ScrollView
       style={styles.container}
       refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => {
-            setRefreshing(true);
-            refreshUser();
-            loadReputation();
-          }}
-        />
+        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadProfile(); }} />
       }
     >
       {/* Profile Card */}
       <Card>
-        <CardTitle>{user.username}</CardTitle>
-        <Text style={styles.email}>{user.email}</Text>
-        {user.full_name && <Text style={styles.name}>{user.full_name}</Text>}
-        
+        <CardTitle>{profile.username}</CardTitle>
+        {profile.full_name && <Text style={styles.name}>{profile.full_name}</Text>}
+
         <View style={styles.badges}>
-          {user.skill_level && (
-            <Badge text={user.skill_level} variant={user.skill_level} style={styles.badge} />
+          {profile.skill_level && (
+            <Badge text={profile.skill_level} variant={profile.skill_level} style={styles.badge} />
           )}
-          {user.isHost && (
+          {profile.isHost && (
             <Badge text="Host" variant="primary" style={styles.badge} />
           )}
         </View>
+
+        <Text style={styles.memberSince}>
+          Member since {new Date(profile.created_at).toLocaleDateString()}
+        </Text>
       </Card>
 
       {/* Reputation Card */}
@@ -88,18 +93,18 @@ export const ProfileScreen = ({ navigation }) => {
         <CardBody>
           <View style={styles.statsRow}>
             <View style={styles.stat}>
-              <Text style={styles.rating}>
-                {renderStars(user.avg_rating || 0)}
+              <Text style={styles.ratingStars}>
+                {renderStars(profile.avg_rating || 0)}
               </Text>
-              <Text style={styles.statValue}>{(user.avg_rating || 0).toFixed(1)}</Text>
+              <Text style={styles.statValue}>{(profile.avg_rating || 0).toFixed(1)}</Text>
               <Text style={styles.statLabel}>Rating</Text>
             </View>
             <View style={styles.stat}>
-              <Text style={styles.statValue}>{user.review_count || 0}</Text>
+              <Text style={styles.statValue}>{profile.review_count || 0}</Text>
               <Text style={styles.statLabel}>Reviews</Text>
             </View>
             <View style={styles.stat}>
-              <Text style={styles.statValue}>{user.games_completed || 0}</Text>
+              <Text style={styles.statValue}>{profile.games_completed || 0}</Text>
               <Text style={styles.statLabel}>Games</Text>
             </View>
           </View>
@@ -142,9 +147,7 @@ export const ProfileScreen = ({ navigation }) => {
             {reputation.recent_reviews.map((review, index) => (
               <View key={index} style={styles.review}>
                 <View style={styles.reviewHeader}>
-                  <Text style={styles.reviewRating}>
-                    {renderStars(review.rating)}
-                  </Text>
+                  <Text style={styles.reviewRating}>{renderStars(review.rating)}</Text>
                   <Text style={styles.reviewDate}>
                     {new Date(review.created_at).toLocaleDateString()}
                   </Text>
@@ -161,22 +164,18 @@ export const ProfileScreen = ({ navigation }) => {
       {/* Actions */}
       <Card>
         <Button
-          title="View My Reviews"
-          onPress={() => navigation.navigate('UserReviews', { userId: user.id, username: user.username })}
+          title="View All Reviews"
+          onPress={() => navigation.navigate('UserReviews', { userId, username: profile.username })}
           style={styles.actionButton}
         />
-        <Button
-          title="Edit Profile"
-          onPress={() => navigation.navigate('EditProfile')}
-          variant="secondary"
-          style={styles.actionButton}
-        />
-        <Button
-          title="Logout"
-          onPress={handleLogout}
-          variant="danger"
-          style={styles.actionButton}
-        />
+        {isOwnProfile && (
+          <Button
+            title="Edit Profile"
+            onPress={() => navigation.navigate('EditProfile')}
+            variant="secondary"
+            style={styles.actionButton}
+          />
+        )}
       </Card>
     </ScrollView>
   );
@@ -193,13 +192,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  email: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
   name: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#333',
     marginTop: 4,
   },
@@ -210,6 +204,11 @@ const styles = StyleSheet.create({
   badge: {
     marginRight: 8,
   },
+  memberSince: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 12,
+  },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -218,7 +217,7 @@ const styles = StyleSheet.create({
   stat: {
     alignItems: 'center',
   },
-  rating: {
+  ratingStars: {
     fontSize: 20,
     color: '#f39c12',
   },

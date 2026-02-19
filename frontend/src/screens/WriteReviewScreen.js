@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
-import { Card, CardTitle, Button, Input } from '../components';
-import { roomsApi, reputationApi, joinRequestsApi } from '../api';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Card, CardTitle, Button, Input, Badge } from '../components';
+import { roomsApi, reputationApi, usersApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 export const WriteReviewScreen = ({ route, navigation }) => {
   const { roomId } = route.params;
   const { user } = useAuth();
   const [room, setRoom] = useState(null);
-  const [members, setMembers] = useState([]);
+  const [participants, setParticipants] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingParticipants, setLoadingParticipants] = useState(true);
 
   useEffect(() => {
     loadRoomData();
@@ -22,18 +23,52 @@ export const WriteReviewScreen = ({ route, navigation }) => {
     try {
       const roomData = await roomsApi.get(roomId);
       setRoom(roomData);
-      
-      // Get waitlist data which includes member info
+
+      const membersList = [];
+
+      // Load room members
       try {
-        const waitlistData = await joinRequestsApi.getWaitlist(roomId);
-        // In a real app, you'd have an endpoint to get all room members
-        // For now, we'll show a simplified version
-      } catch (err) {
-        // Not host, that's fine
+        const membersData = await roomsApi.getMembers(roomId);
+        membersData.forEach((m) => {
+          if (m.user_id !== user.id) {
+            membersList.push({
+              id: m.user_id,
+              username: m.username,
+              isHost: m.is_host,
+            });
+          }
+        });
+      } catch {
+        // May not have access to members list
       }
+
+      // If the host isn't in the members list and isn't the current user, add them
+      if (roomData.host_id !== user.id) {
+        const hostInList = membersList.some((m) => m.id === roomData.host_id);
+        if (!hostInList) {
+          try {
+            const hostUser = await usersApi.get(roomData.host_id);
+            membersList.unshift({
+              id: hostUser.id,
+              username: hostUser.username,
+              isHost: true,
+            });
+          } catch {
+            membersList.unshift({
+              id: roomData.host_id,
+              username: `User #${roomData.host_id}`,
+              isHost: true,
+            });
+          }
+        }
+      }
+
+      setParticipants(membersList);
     } catch (err) {
       Alert.alert('Error', 'Failed to load room data');
       navigation.goBack();
+    } finally {
+      setLoadingParticipants(false);
     }
   };
 
@@ -49,7 +84,7 @@ export const WriteReviewScreen = ({ route, navigation }) => {
 
     setLoading(true);
     try {
-      await reputationApi.createReview(roomId, selectedUser, rating, comment || null);
+      await reputationApi.createReview(roomId, selectedUser.id, rating, comment || null);
       Alert.alert('Success', 'Review submitted!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
@@ -80,20 +115,47 @@ export const WriteReviewScreen = ({ route, navigation }) => {
           Room: {room?.name || `#${roomId}`}
         </Text>
 
+        {/* Participant Selection */}
         <View style={styles.section}>
-          <Text style={styles.label}>User ID to Review *</Text>
-          <Input
-            value={selectedUser?.toString() || ''}
-            onChangeText={(text) => setSelectedUser(text ? parseInt(text, 10) : null)}
-            placeholder="Enter user ID"
-            keyboardType="number-pad"
-          />
-          <Text style={styles.hint}>
-            Note: You can only review users who participated in this room.
-            In a full app, you'd see a list of room participants here.
-          </Text>
+          <Text style={styles.label}>Select a participant to review *</Text>
+          {loadingParticipants ? (
+            <ActivityIndicator style={styles.participantLoading} color="#4a90d9" />
+          ) : participants.length === 0 ? (
+            <Text style={styles.hint}>No other participants found for this room.</Text>
+          ) : (
+            <View style={styles.participantList}>
+              {participants.map((p) => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[
+                    styles.participantChip,
+                    selectedUser?.id === p.id && styles.participantChipSelected,
+                  ]}
+                  onPress={() => setSelectedUser(selectedUser?.id === p.id ? null : p)}
+                >
+                  <Text
+                    style={[
+                      styles.participantName,
+                      selectedUser?.id === p.id && styles.participantNameSelected,
+                    ]}
+                  >
+                    {p.username}
+                  </Text>
+                  {p.isHost && (
+                    <Text style={[
+                      styles.hostLabel,
+                      selectedUser?.id === p.id && styles.hostLabelSelected,
+                    ]}>
+                      Host
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
+        {/* Rating */}
         <View style={styles.section}>
           <Text style={styles.label}>Rating *</Text>
           {renderStarSelector()}
@@ -102,6 +164,7 @@ export const WriteReviewScreen = ({ route, navigation }) => {
           </Text>
         </View>
 
+        {/* Comment */}
         <View style={styles.section}>
           <Text style={styles.label}>Comment (optional)</Text>
           <Input
@@ -151,10 +214,55 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   hint: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#999',
     fontStyle: 'italic',
-    marginTop: 4,
+  },
+  participantLoading: {
+    paddingVertical: 16,
+  },
+  participantList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  participantChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+    backgroundColor: '#f0f0f0',
+    borderWidth: 2,
+    borderColor: '#f0f0f0',
+  },
+  participantChipSelected: {
+    backgroundColor: '#e8f0fe',
+    borderColor: '#4a90d9',
+  },
+  participantName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+  },
+  participantNameSelected: {
+    color: '#4a90d9',
+    fontWeight: '700',
+  },
+  hostLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#999',
+    marginLeft: 6,
+    backgroundColor: '#e0e0e0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  hostLabelSelected: {
+    color: '#4a90d9',
+    backgroundColor: '#d0e0f5',
   },
   stars: {
     flexDirection: 'row',

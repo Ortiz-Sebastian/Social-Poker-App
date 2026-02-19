@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
 import { Card, CardTitle, CardBody, Button, Badge } from '../components';
-import { roomsApi, joinRequestsApi, reputationApi } from '../api';
+import { roomsApi, joinRequestsApi, usersApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 export const RoomDetailScreen = ({ route, navigation }) => {
@@ -10,6 +10,7 @@ export const RoomDetailScreen = ({ route, navigation }) => {
   const [room, setRoom] = useState(null);
   const [privateRoom, setPrivateRoom] = useState(null);
   const [members, setMembers] = useState([]);
+  const [hostUsername, setHostUsername] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [kickLoading, setKickLoading] = useState(null);
@@ -26,20 +27,23 @@ export const RoomDetailScreen = ({ route, navigation }) => {
       const publicData = await roomsApi.get(roomId);
       setRoom(publicData);
 
-      // Try to get private data (will fail if not a member)
+      // Load host username
+      try {
+        const hostUser = await usersApi.get(publicData.host_id);
+        setHostUsername(hostUser.username);
+      } catch {
+        setHostUsername(null);
+      }
+
       try {
         const privateData = await roomsApi.getPrivate(roomId);
         setPrivateRoom(privateData);
-        
-        // Load members if we have access
+
         try {
           const membersData = await roomsApi.getMembers(roomId);
           setMembers(membersData);
-        } catch (err) {
-          // Can't load members
-        }
-      } catch (err) {
-        // Not a member, that's fine
+        } catch {}
+      } catch {
         setPrivateRoom(null);
       }
     } catch (err) {
@@ -117,7 +121,6 @@ export const RoomDetailScreen = ({ route, navigation }) => {
             try {
               await roomsApi.kickMember(roomId, memberId);
               Alert.alert('Success', `${username} has been kicked from the room`);
-              // Reload members
               const membersData = await roomsApi.getMembers(roomId);
               setMembers(membersData);
             } catch (err) {
@@ -129,6 +132,10 @@ export const RoomDetailScreen = ({ route, navigation }) => {
         },
       ]
     );
+  };
+
+  const navigateToProfile = (userId) => {
+    navigation.navigate('UserProfile', { userId });
   };
 
   if (loading || !room) {
@@ -172,8 +179,12 @@ export const RoomDetailScreen = ({ route, navigation }) => {
           )}
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Host ID:</Text>
-            <Text style={styles.infoValue}>{room.host_id}</Text>
+            <Text style={styles.infoLabel}>Host:</Text>
+            <TouchableOpacity onPress={() => navigateToProfile(room.host_id)}>
+              <Text style={styles.linkText}>
+                {hostUsername || `User #${room.host_id}`}
+              </Text>
+            </TouchableOpacity>
           </View>
         </CardBody>
       </Card>
@@ -204,21 +215,24 @@ export const RoomDetailScreen = ({ route, navigation }) => {
         </CardBody>
       </Card>
 
-      {/* Members List (visible to host and members) */}
+      {/* Members List */}
       {(isHost || isMember) && members.length > 0 && (
         <Card>
           <CardTitle>Room Members ({members.filter(m => m.status === 'active').length})</CardTitle>
           <CardBody>
             {members.filter(m => m.status === 'active').map((member) => (
               <View key={member.id} style={styles.memberRow}>
-                <View style={styles.memberInfo}>
-                  <Text style={styles.memberName}>
+                <TouchableOpacity
+                  style={styles.memberInfo}
+                  onPress={() => navigateToProfile(member.user_id)}
+                >
+                  <Text style={styles.memberNameLink}>
                     {member.username} {member.is_host && '(Host)'}
                   </Text>
                   <Text style={styles.memberDate}>
                     Joined: {new Date(member.joined_at).toLocaleDateString()}
                   </Text>
-                </View>
+                </TouchableOpacity>
                 {isHost && !member.is_host && (
                   <Button
                     title="Kick"
@@ -230,7 +244,7 @@ export const RoomDetailScreen = ({ route, navigation }) => {
                 )}
               </View>
             ))}
-            
+
             {/* Waitlisted members */}
             {members.filter(m => m.status === 'waitlisted').length > 0 && (
               <>
@@ -239,11 +253,14 @@ export const RoomDetailScreen = ({ route, navigation }) => {
                   .sort((a, b) => a.queue_position - b.queue_position)
                   .map((member) => (
                     <View key={member.id} style={styles.memberRow}>
-                      <View style={styles.memberInfo}>
-                        <Text style={styles.memberName}>
+                      <TouchableOpacity
+                        style={styles.memberInfo}
+                        onPress={() => navigateToProfile(member.user_id)}
+                      >
+                        <Text style={styles.memberNameLink}>
                           #{member.queue_position} - {member.username}
                         </Text>
-                      </View>
+                      </TouchableOpacity>
                       {isHost && (
                         <Button
                           title="Remove"
@@ -309,11 +326,19 @@ export const RoomDetailScreen = ({ route, navigation }) => {
               )}
 
               {room.status === 'finished' && (
-                <Button
-                  title="View Reviews"
-                  onPress={() => navigation.navigate('RoomReviews', { roomId })}
-                  style={styles.actionButton}
-                />
+                <>
+                  <Button
+                    title="Write Reviews"
+                    onPress={() => navigation.navigate('WriteReview', { roomId })}
+                    style={styles.actionButton}
+                  />
+                  <Button
+                    title="View Room Reviews"
+                    onPress={() => navigation.navigate('RoomReviews', { roomId })}
+                    variant="secondary"
+                    style={styles.actionButton}
+                  />
+                </>
               )}
             </>
           ) : (
@@ -327,7 +352,6 @@ export const RoomDetailScreen = ({ route, navigation }) => {
                 />
               )}
 
-              {/* Leave Room button for members */}
               {privateRoom && room.status !== 'finished' && room.status !== 'cancelled' && (
                 <Button
                   title="Leave Room"
@@ -339,11 +363,19 @@ export const RoomDetailScreen = ({ route, navigation }) => {
               )}
 
               {privateRoom && room.status === 'finished' && (
-                <Button
-                  title="Write Reviews"
-                  onPress={() => navigation.navigate('WriteReview', { roomId })}
-                  style={styles.actionButton}
-                />
+                <>
+                  <Button
+                    title="Write Reviews"
+                    onPress={() => navigation.navigate('WriteReview', { roomId })}
+                    style={styles.actionButton}
+                  />
+                  <Button
+                    title="View Room Reviews"
+                    onPress={() => navigation.navigate('RoomReviews', { roomId })}
+                    variant="secondary"
+                    style={styles.actionButton}
+                  />
+                </>
               )}
 
               <Button
@@ -402,6 +434,7 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
@@ -414,6 +447,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#333',
+  },
+  linkText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4a90d9',
   },
   locationTitle: {
     fontSize: 14,
@@ -450,10 +488,10 @@ const styles = StyleSheet.create({
   memberInfo: {
     flex: 1,
   },
-  memberName: {
+  memberNameLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#4a90d9',
   },
   memberDate: {
     fontSize: 12,
