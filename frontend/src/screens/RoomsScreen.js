@@ -4,6 +4,20 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Card, CardTitle, CardSubtitle, Button, Badge } from '../components';
 import { roomsApi } from '../api';
 
+const getTimeUntil = (dateStr) => {
+  if (!dateStr) return null;
+  const ms = new Date(dateStr).getTime() - Date.now();
+  if (ms <= 0) return 'Starting soon';
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  if (hours > 48) {
+    const days = Math.floor(hours / 24);
+    return `Starts in ${days} days`;
+  }
+  if (hours > 0) return `Starts in ${hours}h ${minutes}m`;
+  return `Starts in ${minutes}m`;
+};
+
 export const RoomsScreen = ({ navigation }) => {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,7 +52,14 @@ export const RoomsScreen = ({ navigation }) => {
   };
 
   // Separate rooms into sections
-  const upcomingRooms = rooms.filter(r => r.status === 'scheduled' || r.status === 'active');
+  const upcomingRooms = rooms
+    .filter(r => r.status === 'scheduled' || r.status === 'active')
+    .sort((a, b) => {
+      if (a.scheduled_at && b.scheduled_at) return new Date(a.scheduled_at) - new Date(b.scheduled_at);
+      if (a.scheduled_at) return -1;
+      if (b.scheduled_at) return 1;
+      return 0;
+    });
   const pastRooms = rooms.filter(r => r.status === 'finished' || r.status === 'cancelled');
 
   const sections = [
@@ -46,36 +67,53 @@ export const RoomsScreen = ({ navigation }) => {
     { title: 'Past Games', data: pastRooms },
   ].filter(section => section.data.length > 0);
 
-  const renderRoom = ({ item }) => (
-    <Card onPress={() => navigation.navigate('RoomDetail', { roomId: item.id })}>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardTitleRow}>
-          <CardTitle>{item.name}</CardTitle>
-          {item.is_host && (
-            <View style={styles.hostBadge}>
-              <Text style={styles.hostBadgeText}>HOST</Text>
-            </View>
-          )}
+  const renderRoom = ({ item }) => {
+    const timeUntil = item.status === 'scheduled' ? getTimeUntil(item.scheduled_at) : null;
+    return (
+      <Card onPress={() => navigation.navigate('RoomDetail', { roomId: item.id })}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardTitleRow}>
+            <CardTitle>{item.name}</CardTitle>
+            {item.is_host && (
+              <View style={styles.hostBadge}>
+                <Text style={styles.hostBadgeText}>HOST</Text>
+              </View>
+            )}
+          </View>
+          <Badge text={item.status} variant={item.status} />
         </View>
-        <Badge text={item.status} variant={item.status} />
-      </View>
-      {item.skill_level && (
-        <Badge text={item.skill_level} variant={item.skill_level} style={styles.skillBadge} />
-      )}
-      <CardSubtitle>
-        {item.max_players ? `Max ${item.max_players} players` : 'No player limit'}
-        {item.buy_in_info && ` • ${item.buy_in_info}`}
-      </CardSubtitle>
-      {item.description && (
-        <Text style={styles.description} numberOfLines={2}>
-          {item.description}
+        {timeUntil && (
+          <View style={styles.scheduleRow}>
+            <Text style={styles.scheduleText}>{timeUntil}</Text>
+            {item.scheduled_at && (
+              <Text style={styles.scheduleDateText}>
+                {new Date(item.scheduled_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                {' '}
+                {new Date(item.scheduled_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            )}
+          </View>
+        )}
+        {item.skill_level && (
+          <Badge text={item.skill_level} variant={item.skill_level} style={styles.skillBadge} />
+        )}
+        <CardSubtitle>
+          {item.max_players ? `Max ${item.max_players} players` : 'No player limit'}
+          {item.buy_in_info && ` • ${item.buy_in_info}`}
+        </CardSubtitle>
+        {item.description && (
+          <Text style={styles.description} numberOfLines={2}>
+            {item.description}
+          </Text>
+        )}
+        <Text style={styles.date}>
+          {item.scheduled_at
+            ? new Date(item.scheduled_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+            : `Created: ${new Date(item.created_at).toLocaleDateString()}`}
         </Text>
-      )}
-      <Text style={styles.date}>
-        Created: {new Date(item.created_at).toLocaleDateString()}
-      </Text>
-    </Card>
-  );
+      </Card>
+    );
+  };
 
   const renderSectionHeader = ({ section: { title, data } }) => (
     <View style={styles.sectionHeader}>
@@ -201,6 +239,26 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#fff',
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#e8f4fd',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginTop: 6,
+  },
+  scheduleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#e67e22',
+  },
+  scheduleDateText: {
+    fontSize: 12,
+    color: '#4a90d9',
+    fontWeight: '500',
   },
   skillBadge: {
     marginTop: 4,

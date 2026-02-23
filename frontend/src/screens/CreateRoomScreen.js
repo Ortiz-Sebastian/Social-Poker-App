@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Platform } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import { Button, Input } from '../components';
 import { roomsApi } from '../api';
@@ -22,6 +23,9 @@ export const CreateRoomScreen = ({ navigation }) => {
   const [maxPlayers, setMaxPlayers] = useState('');
   const [buyInInfo, setBuyInInfo] = useState('');
   const [skillLevel, setSkillLevel] = useState(null);
+  const [scheduledAt, setScheduledAt] = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
 
@@ -135,6 +139,14 @@ export const CreateRoomScreen = ({ navigation }) => {
   const createRoom = async (lat, lon) => {
     setLoading(true);
     try {
+      let scheduledAtStr = null;
+      if (scheduledAt) {
+        const pad = (n) => String(n).padStart(2, '0');
+        scheduledAtStr =
+          `${scheduledAt.getFullYear()}-${pad(scheduledAt.getMonth() + 1)}-${pad(scheduledAt.getDate())}` +
+          `T${pad(scheduledAt.getHours())}:${pad(scheduledAt.getMinutes())}:00`;
+      }
+
       const roomData = {
         name,
         description: description || null,
@@ -144,6 +156,7 @@ export const CreateRoomScreen = ({ navigation }) => {
         max_players: maxPlayers ? parseInt(maxPlayers, 10) : null,
         buy_in_info: buyInInfo || null,
         skill_level: skillLevel,
+        scheduled_at: scheduledAtStr,
       };
 
       console.log('Creating room with data:', roomData);
@@ -218,6 +231,84 @@ export const CreateRoomScreen = ({ navigation }) => {
               ✓ Location set ({parseFloat(latitude).toFixed(4)}, {parseFloat(longitude).toFixed(4)})
             </Text>
           </View>
+        )}
+      </View>
+
+      {/* Schedule Section */}
+      <View style={styles.locationSection}>
+        <Text style={styles.sectionTitle}>Schedule</Text>
+        <Text style={styles.sectionHint}>
+          When is the game happening?
+        </Text>
+
+        {scheduledAt ? (
+          <View style={styles.scheduledInfo}>
+            <View style={styles.scheduledDateTime}>
+              <TouchableOpacity style={styles.dateButton} onPress={() => setShowDatePicker(true)}>
+                <Text style={styles.dateButtonLabel}>Date</Text>
+                <Text style={styles.dateButtonValue}>
+                  {scheduledAt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.dateButton} onPress={() => setShowTimePicker(true)}>
+                <Text style={styles.dateButtonLabel}>Time</Text>
+                <Text style={styles.dateButtonValue}>
+                  {scheduledAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.clearDateButton}
+              onPress={() => setScheduledAt(null)}
+            >
+              <Text style={styles.clearDateText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <Button
+            title="Set Date & Time"
+            onPress={() => {
+              const defaultDate = new Date();
+              defaultDate.setHours(defaultDate.getHours() + 2);
+              defaultDate.setMinutes(0, 0, 0);
+              setScheduledAt(defaultDate);
+              setShowDatePicker(true);
+            }}
+            variant="secondary"
+          />
+        )}
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={scheduledAt || new Date()}
+            mode="date"
+            minimumDate={new Date()}
+            onChange={(event, date) => {
+              setShowDatePicker(Platform.OS === 'ios');
+              if (date) {
+                const updated = new Date(scheduledAt || new Date());
+                updated.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+                setScheduledAt(updated);
+                if (Platform.OS !== 'ios') setShowTimePicker(true);
+              }
+            }}
+          />
+        )}
+
+        {showTimePicker && (
+          <DateTimePicker
+            value={scheduledAt || new Date()}
+            mode="time"
+            minuteInterval={15}
+            onChange={(event, date) => {
+              setShowTimePicker(Platform.OS === 'ios');
+              if (date) {
+                const updated = new Date(scheduledAt || new Date());
+                updated.setHours(date.getHours(), date.getMinutes(), 0, 0);
+                setScheduledAt(updated);
+              }
+            }}
+          />
         )}
       </View>
 
@@ -315,6 +406,40 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     textAlign: 'center',
+  },
+  scheduledInfo: {
+    gap: 8,
+  },
+  scheduledDateTime: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dateButton: {
+    flex: 1,
+    backgroundColor: '#e8f4fd',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  dateButtonLabel: {
+    fontSize: 11,
+    color: '#666',
+    marginBottom: 2,
+  },
+  dateButtonValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1a1a2e',
+  },
+  clearDateButton: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+  },
+  clearDateText: {
+    fontSize: 13,
+    color: '#e74c3c',
+    fontWeight: '500',
   },
   label: {
     fontSize: 14,

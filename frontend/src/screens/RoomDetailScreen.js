@@ -1,8 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
 import { Card, CardTitle, CardBody, Button, Badge } from '../components';
 import { roomsApi, joinRequestsApi, usersApi } from '../api';
 import { useAuth } from '../context/AuthContext';
+
+const formatTimeRemaining = (ms) => {
+  if (ms <= 0) return null;
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+  if (hours > 24) {
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return `${days}d ${remainingHours}h`;
+  }
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+};
+
+const formatScheduledDate = (dateStr) => {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  }) + ' at ' + date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
 
 export const RoomDetailScreen = ({ route, navigation }) => {
   const { roomId } = route.params;
@@ -15,12 +42,30 @@ export const RoomDetailScreen = ({ route, navigation }) => {
   const [actionLoading, setActionLoading] = useState(false);
   const [kickLoading, setKickLoading] = useState(null);
 
+  const [countdown, setCountdown] = useState(null);
+  const countdownRef = useRef(null);
+
   const isHost = room?.host_id === user?.id;
   const isMember = privateRoom !== null;
 
   useEffect(() => {
     loadRoom();
   }, [roomId]);
+
+  useEffect(() => {
+    if (room?.scheduled_at && room.status === 'scheduled') {
+      const tick = () => {
+        const remaining = new Date(room.scheduled_at).getTime() - Date.now();
+        setCountdown(remaining > 0 ? remaining : 0);
+      };
+      tick();
+      countdownRef.current = setInterval(tick, 1000);
+      return () => clearInterval(countdownRef.current);
+    } else {
+      setCountdown(null);
+    }
+    return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
+  }, [room?.scheduled_at, room?.status]);
 
   const loadRoom = async () => {
     try {
@@ -165,6 +210,19 @@ export const RoomDetailScreen = ({ route, navigation }) => {
           <Text style={styles.description}>{room.description}</Text>
         )}
 
+        {room.scheduled_at && (
+          <View style={styles.scheduleBox}>
+            <Text style={styles.scheduleLabel}>Scheduled</Text>
+            <Text style={styles.scheduleValue}>{formatScheduledDate(room.scheduled_at)}</Text>
+            {countdown !== null && countdown > 0 && (
+              <Text style={styles.countdownText}>Starts in {formatTimeRemaining(countdown)}</Text>
+            )}
+            {countdown !== null && countdown <= 0 && room.status === 'scheduled' && (
+              <Text style={styles.readyText}>Ready to start</Text>
+            )}
+          </View>
+        )}
+
         <CardBody>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Max Players:</Text>
@@ -299,10 +357,15 @@ export const RoomDetailScreen = ({ route, navigation }) => {
               {room.status === 'scheduled' && (
                 <>
                   <Button
-                    title="Start Game"
+                    title={
+                      countdown !== null && countdown > 0
+                        ? `Start Game (${formatTimeRemaining(countdown)})`
+                        : 'Start Game'
+                    }
                     onPress={() => handleStatusChange('active')}
                     variant="success"
                     loading={actionLoading}
+                    disabled={countdown !== null && countdown > 0}
                     style={styles.actionButton}
                   />
                   <Button
@@ -473,6 +536,38 @@ const styles = StyleSheet.create({
     color: '#999',
     fontStyle: 'italic',
     marginTop: 4,
+  },
+  scheduleBox: {
+    backgroundColor: '#e8f4fd',
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  scheduleLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4a90d9',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  scheduleValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1a1a2e',
+  },
+  countdownText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#e67e22',
+    marginTop: 6,
+  },
+  readyText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#27ae60',
+    marginTop: 6,
   },
   actionButton: {
     marginBottom: 12,

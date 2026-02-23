@@ -1,10 +1,27 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, RefreshControl, Alert, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useCallback, useRef } from 'react';
+import {
+  View, Text, StyleSheet, FlatList, RefreshControl, Alert,
+  TouchableOpacity, TextInput, Animated, Keyboard, Platform,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { Picker } from '@react-native-picker/picker';
-import { Card, CardTitle, CardSubtitle, Button, Badge } from '../components';
+import { Card, CardTitle, CardSubtitle, Button, Badge, RoomMapView } from '../components';
 import { roomsApi } from '../api';
+
+const getTimeUntil = (dateStr) => {
+  if (!dateStr) return null;
+  const ms = new Date(dateStr).getTime() - Date.now();
+  if (ms <= 0) return 'Starting soon';
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  if (hours > 48) {
+    const days = Math.floor(hours / 24);
+    return `Starts in ${days} days`;
+  }
+  if (hours > 0) return `Starts in ${hours}h ${minutes}m`;
+  return `Starts in ${minutes}m`;
+};
 
 const RADIUS_OPTIONS = [
   { label: '1 km', value: 1000 },
@@ -20,57 +37,56 @@ const SEARCH_MODES = {
   ADDRESS: 'address',
 };
 
+const VIEW_MODES = {
+  LIST: 'list',
+  MAP: 'map',
+};
+
 export const SearchScreen = ({ navigation }) => {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  
-  // Search mode: 'gps' or 'address'
+
   const [searchMode, setSearchMode] = useState(SEARCH_MODES.GPS);
-  
-  // GPS location state
+  const [viewMode, setViewMode] = useState(VIEW_MODES.MAP);
+
   const [location, setLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState(null);
-  
-  // Address search state
+
   const [searchAddress, setSearchAddress] = useState('');
-  
   const [radius, setRadius] = useState(10000);
+
+  // Map state
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [searchExpanded, setSearchExpanded] = useState(true);
 
   const getLocation = async () => {
     setLocationLoading(true);
     setLocationError(null);
-    
+
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      
+
       if (status !== 'granted') {
         setLocationError('Location permission denied');
         Alert.alert('Permission Denied', 'Please enable location permissions to search nearby rooms.');
         return null;
       }
-      
+
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-      
+
       const coords = {
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
       };
-      
-      // Debug logging
-      console.log('=== USER LOCATION DEBUG ===');
-      console.log('User Latitude:', coords.latitude);
-      console.log('User Longitude:', coords.longitude);
-      console.log('===========================');
-      
+
       setLocation(coords);
       return coords;
     } catch (err) {
-      console.error('Location error:', err);
       setLocationError('Could not get location');
       Alert.alert('Error', 'Could not get your location. Please try again.');
       return null;
@@ -79,67 +95,71 @@ export const SearchScreen = ({ navigation }) => {
     }
   };
 
-  // Search by GPS coordinates
   const searchByCoords = async (coords) => {
     setLoading(true);
     setHasSearched(true);
-    
+
     try {
-      const params = {
+      const data = await roomsApi.list({
         latitude: coords.latitude,
         longitude: coords.longitude,
-        radius: radius,
+        radius,
         limit: 50,
-      };
-      
-      const data = await roomsApi.list(params);
-      const scheduledRooms = data.filter(room => room.status === 'scheduled');
-      
-      console.log('=== GPS SEARCH DEBUG ===');
-      console.log('Search params:', { lat: coords.latitude, lon: coords.longitude, radius });
-      console.log('Total rooms found:', scheduledRooms.length);
-      console.log('========================');
-      
+      });
+      const scheduledRooms = data
+        .filter((room) => room.status === 'scheduled')
+        .sort((a, b) => {
+          if (a.scheduled_at && b.scheduled_at) return new Date(a.scheduled_at) - new Date(b.scheduled_at);
+          if (a.scheduled_at) return -1;
+          if (b.scheduled_at) return 1;
+          return 0;
+        });
       setRooms(scheduledRooms);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.detail || 'Failed to search rooms');
-      console.error(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // Search by address (geocoded on backend)
   const searchByAddress = async () => {
     if (!searchAddress || searchAddress.trim().length < 2) {
       Alert.alert('Error', 'Please enter a valid address, city, or zipcode');
       return;
     }
-    
+
     setLoading(true);
     setHasSearched(true);
-    
+
     try {
-      const params = {
+      // Geocode client-side so the map knows where to center
+      try {
+        const geocoded = await Location.geocodeAsync(searchAddress.trim());
+        if (geocoded.length > 0) {
+          setLocation({
+            latitude: geocoded[0].latitude,
+            longitude: geocoded[0].longitude,
+          });
+        }
+      } catch {}
+
+      const data = await roomsApi.list({
         address: searchAddress.trim(),
-        radius: radius,
+        radius,
         limit: 50,
-      };
-      
-      console.log('=== ADDRESS SEARCH DEBUG ===');
-      console.log('Search params:', { address: searchAddress, radius });
-      
-      const data = await roomsApi.list(params);
-      const scheduledRooms = data.filter(room => room.status === 'scheduled');
-      
-      console.log('Total rooms found:', scheduledRooms.length);
-      console.log('============================');
-      
+      });
+      const scheduledRooms = data
+        .filter((room) => room.status === 'scheduled')
+        .sort((a, b) => {
+          if (a.scheduled_at && b.scheduled_at) return new Date(a.scheduled_at) - new Date(b.scheduled_at);
+          if (a.scheduled_at) return -1;
+          if (b.scheduled_at) return 1;
+          return 0;
+        });
       setRooms(scheduledRooms);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.detail || 'Failed to search rooms');
-      console.error(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -159,7 +179,7 @@ export const SearchScreen = ({ navigation }) => {
     if (searchMode === SEARCH_MODES.ADDRESS) {
       await searchByAddress();
     } else {
-      const coords = location || await getLocation();
+      const coords = location || (await getLocation());
       if (coords) {
         await searchByCoords(coords);
       } else {
@@ -169,87 +189,119 @@ export const SearchScreen = ({ navigation }) => {
   };
 
   const handleSearch = async () => {
+    Keyboard.dismiss();
+    if (viewMode === VIEW_MODES.MAP) {
+      setSearchExpanded(false);
+    }
+    setSelectedRoom(null);
+
     if (searchMode === SEARCH_MODES.ADDRESS) {
       await searchByAddress();
     } else {
-      const coords = location || await getLocation();
+      const coords = location || (await getLocation());
       if (coords) {
         await searchByCoords(coords);
       }
     }
   };
 
-  const renderRoom = ({ item }) => (
-    <Card onPress={() => navigation.navigate('RoomDetail', { roomId: item.id })}>
-      <View style={styles.cardHeader}>
-        <CardTitle>{item.name}</CardTitle>
-        <Badge text={item.status} variant={item.status} />
-      </View>
-      {item.skill_level && (
-        <Badge text={item.skill_level} variant={item.skill_level} style={styles.skillBadge} />
-      )}
-      <CardSubtitle>
-        {item.max_players ? `Max ${item.max_players} players` : 'No player limit'}
-        {item.buy_in_info && ` • ${item.buy_in_info}`}
-      </CardSubtitle>
-      {item.description && (
-        <Text style={styles.description} numberOfLines={2}>
-          {item.description}
-        </Text>
-      )}
-      {item.distance_meters && (
-        <Text style={styles.distance}>
-          📍 {item.distance_meters < 1000 
-            ? `${Math.round(item.distance_meters)} m away`
-            : `${(item.distance_meters / 1000).toFixed(1)} km away`}
-        </Text>
-      )}
-    </Card>
-  );
+  const renderRoom = ({ item }) => {
+    const timeUntil = getTimeUntil(item.scheduled_at);
+    return (
+      <Card onPress={() => navigation.navigate('RoomDetail', { roomId: item.id })}>
+        <View style={styles.cardHeader}>
+          <CardTitle>{item.name}</CardTitle>
+          <Badge text={item.status} variant={item.status} />
+        </View>
+        {timeUntil && (
+          <View style={styles.scheduleRow}>
+            <Text style={styles.scheduleText}>{timeUntil}</Text>
+            {item.scheduled_at && (
+              <Text style={styles.scheduleDateText}>
+                {new Date(item.scheduled_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                {' '}
+                {new Date(item.scheduled_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            )}
+          </View>
+        )}
+        {item.skill_level && (
+          <Badge text={item.skill_level} variant={item.skill_level} style={styles.skillBadge} />
+        )}
+        <CardSubtitle>
+          {item.max_players ? `Max ${item.max_players} players` : 'No player limit'}
+          {item.buy_in_info && ` • ${item.buy_in_info}`}
+        </CardSubtitle>
+        {item.description && (
+          <Text style={styles.description} numberOfLines={2}>
+            {item.description}
+          </Text>
+        )}
+        {item.distance_meters && (
+          <Text style={styles.distance}>
+            {item.distance_meters < 1000
+              ? `${Math.round(item.distance_meters)} m away`
+              : `${(item.distance_meters / 1000).toFixed(1)} km away`}
+          </Text>
+        )}
+      </Card>
+    );
+  };
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Find Rooms</Text>
-        <Text style={styles.subtitle}>Discover poker games near you</Text>
-      </View>
+  const renderSearchControls = () => {
+    if (viewMode === VIEW_MODES.MAP && !searchExpanded) {
+      return (
+        <TouchableOpacity
+          style={styles.compactSearch}
+          onPress={() => setSearchExpanded(true)}
+        >
+          <View style={styles.compactSearchContent}>
+            <Text style={styles.compactSearchIcon}>
+              {searchMode === SEARCH_MODES.GPS ? '📍' : '🔍'}
+            </Text>
+            <View style={styles.compactSearchTextContainer}>
+              <Text style={styles.compactSearchText} numberOfLines={1}>
+                {searchMode === SEARCH_MODES.ADDRESS
+                  ? searchAddress || 'Search by address'
+                  : location
+                    ? 'Near your location'
+                    : 'Enable GPS'}
+              </Text>
+              <Text style={styles.compactSearchRadius}>
+                {radius / 1000} km • {rooms.length} room{rooms.length !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            <Text style={styles.compactSearchExpand}>Edit</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
 
+    return (
       <View style={styles.searchContainer}>
         {/* Search Mode Toggle */}
         <View style={styles.modeToggle}>
           <TouchableOpacity
-            style={[
-              styles.modeButton,
-              searchMode === SEARCH_MODES.GPS && styles.modeButtonActive,
-            ]}
+            style={[styles.modeButton, searchMode === SEARCH_MODES.GPS && styles.modeButtonActive]}
             onPress={() => setSearchMode(SEARCH_MODES.GPS)}
           >
-            <Text style={[
-              styles.modeButtonText,
-              searchMode === SEARCH_MODES.GPS && styles.modeButtonTextActive,
-            ]}>
-              📍 Use GPS
+            <Text style={[styles.modeButtonText, searchMode === SEARCH_MODES.GPS && styles.modeButtonTextActive]}>
+              GPS
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[
-              styles.modeButton,
-              searchMode === SEARCH_MODES.ADDRESS && styles.modeButtonActive,
-            ]}
+            style={[styles.modeButton, searchMode === SEARCH_MODES.ADDRESS && styles.modeButtonActive]}
             onPress={() => setSearchMode(SEARCH_MODES.ADDRESS)}
           >
-            <Text style={[
-              styles.modeButtonText,
-              searchMode === SEARCH_MODES.ADDRESS && styles.modeButtonTextActive,
-            ]}>
-              🔍 Search Address
+            <Text style={[styles.modeButtonText, searchMode === SEARCH_MODES.ADDRESS && styles.modeButtonTextActive]}>
+              Address
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* GPS Location Mode */}
+        {/* GPS Mode */}
         {searchMode === SEARCH_MODES.GPS && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.locationBox, location && styles.locationBoxSuccess]}
             onPress={getLocation}
             disabled={locationLoading}
@@ -259,7 +311,7 @@ export const SearchScreen = ({ navigation }) => {
               {locationLoading ? (
                 <Text style={styles.locationText}>Getting location...</Text>
               ) : location ? (
-                <Text style={styles.locationTextSuccess}>✓ Location acquired</Text>
+                <Text style={styles.locationTextSuccess}>Location acquired</Text>
               ) : (
                 <Text style={styles.locationTextError}>
                   {locationError || 'Tap to enable location'}
@@ -267,22 +319,21 @@ export const SearchScreen = ({ navigation }) => {
               )}
             </View>
             <Button
-              title={location ? "Refresh" : "Enable"}
+              title={location ? 'Refresh' : 'Enable'}
               onPress={getLocation}
-              variant={location ? "secondary" : "primary"}
+              variant={location ? 'secondary' : 'primary'}
               loading={locationLoading}
               style={styles.locationButton}
             />
           </TouchableOpacity>
         )}
 
-        {/* Address Search Mode */}
+        {/* Address Mode */}
         {searchMode === SEARCH_MODES.ADDRESS && (
           <View style={styles.addressContainer}>
-            <Text style={styles.addressLabel}>Search Location</Text>
             <TextInput
               style={styles.addressInput}
-              placeholder="Enter city, zipcode, or address..."
+              placeholder='City, zipcode, or address...'
               placeholderTextColor="#999"
               value={searchAddress}
               onChangeText={setSearchAddress}
@@ -291,14 +342,12 @@ export const SearchScreen = ({ navigation }) => {
               returnKeyType="search"
               onSubmitEditing={handleSearch}
             />
-            <Text style={styles.addressHint}>
-              Examples: "San Francisco", "90210", "123 Main St, NYC"
-            </Text>
           </View>
         )}
 
-        <View style={styles.radiusContainer}>
-          <Text style={styles.radiusLabel}>Search Radius</Text>
+        {/* Radius */}
+        <View style={styles.radiusRow}>
+          <Text style={styles.radiusLabel}>Radius:</Text>
           <View style={styles.radiusPicker}>
             <Picker
               selectedValue={radius}
@@ -313,19 +362,56 @@ export const SearchScreen = ({ navigation }) => {
         </View>
 
         <Button
-          title={searchMode === SEARCH_MODES.ADDRESS ? "Search by Address" : "Search Nearby Rooms"}
+          title="Search"
           onPress={handleSearch}
           loading={loading}
           disabled={
-            searchMode === SEARCH_MODES.GPS 
-              ? (!location || locationLoading)
-              : (!searchAddress || searchAddress.trim().length < 2)
+            searchMode === SEARCH_MODES.GPS
+              ? !location || locationLoading
+              : !searchAddress || searchAddress.trim().length < 2
           }
           style={styles.searchButton}
         />
       </View>
+    );
+  };
 
-      {hasSearched && !loading && (
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.title}>Find Rooms</Text>
+            <Text style={styles.subtitle}>Discover poker games near you</Text>
+          </View>
+          {/* Map/List toggle */}
+          <View style={styles.viewToggle}>
+            <TouchableOpacity
+              style={[styles.viewButton, viewMode === VIEW_MODES.MAP && styles.viewButtonActive]}
+              onPress={() => { setViewMode(VIEW_MODES.MAP); setSelectedRoom(null); }}
+            >
+              <Text style={[styles.viewButtonText, viewMode === VIEW_MODES.MAP && styles.viewButtonTextActive]}>
+                Map
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.viewButton, viewMode === VIEW_MODES.LIST && styles.viewButtonActive]}
+              onPress={() => { setViewMode(VIEW_MODES.LIST); setSearchExpanded(true); }}
+            >
+              <Text style={[styles.viewButtonText, viewMode === VIEW_MODES.LIST && styles.viewButtonTextActive]}>
+                List
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      {/* Search Controls */}
+      {renderSearchControls()}
+
+      {/* Results Info */}
+      {hasSearched && !loading && viewMode === VIEW_MODES.LIST && (
         <View style={styles.resultsInfo}>
           <Text style={styles.resultsText}>
             {rooms.length} scheduled room{rooms.length !== 1 ? 's' : ''} found within {radius / 1000} km
@@ -333,33 +419,49 @@ export const SearchScreen = ({ navigation }) => {
         </View>
       )}
 
-      <FlatList
-        data={rooms}
-        renderItem={renderRoom}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        ListEmptyComponent={
-          hasSearched && !loading ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>No rooms found nearby</Text>
-              <Text style={styles.emptySubtext}>
-                Try increasing the search radius or check back later
-              </Text>
-            </View>
-          ) : !hasSearched && !loading ? (
-            <View style={styles.prompt}>
-              <Text style={styles.promptIcon}>🎯</Text>
-              <Text style={styles.promptTitle}>Ready to find a game?</Text>
-              <Text style={styles.promptSubtext}>
-                Enable location and tap "Search Nearby Rooms" to discover scheduled poker games in your area.
-              </Text>
-            </View>
-          ) : null
-        }
-      />
+      {/* Map View */}
+      {viewMode === VIEW_MODES.MAP && (
+        <RoomMapView
+          rooms={rooms}
+          userLocation={location}
+          searchRadius={radius}
+          selectedRoom={selectedRoom}
+          onSelectRoom={setSelectedRoom}
+          onDeselectRoom={() => setSelectedRoom(null)}
+          onRoomPress={(room) => navigation.navigate('RoomDetail', { roomId: room.id })}
+        />
+      )}
+
+      {/* List View */}
+      {viewMode === VIEW_MODES.LIST && (
+        <FlatList
+          data={rooms}
+          renderItem={renderRoom}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          ListEmptyComponent={
+            hasSearched && !loading ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyText}>No rooms found nearby</Text>
+                <Text style={styles.emptySubtext}>
+                  Try increasing the search radius or check back later
+                </Text>
+              </View>
+            ) : !hasSearched && !loading ? (
+              <View style={styles.prompt}>
+                <Text style={styles.promptIcon}>🎯</Text>
+                <Text style={styles.promptTitle}>Ready to find a game?</Text>
+                <Text style={styles.promptSubtext}>
+                  Enable location and tap "Search" to discover poker games in your area.
+                </Text>
+              </View>
+            ) : null
+          }
+        />
+      )}
     </View>
   );
 };
@@ -370,36 +472,66 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   header: {
-    padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 56 : 12,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
     backgroundColor: '#1a1a2e',
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
     color: '#fff',
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#aaa',
-    marginTop: 4,
+    marginTop: 2,
   },
+  viewToggle: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 8,
+    padding: 3,
+  },
+  viewButton: {
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  viewButtonActive: {
+    backgroundColor: '#fff',
+  },
+  viewButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
+  },
+  viewButtonTextActive: {
+    color: '#1a1a2e',
+  },
+
+  // Full search controls
   searchContainer: {
     backgroundColor: '#fff',
-    padding: 16,
+    padding: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
   modeToggle: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: 12,
     backgroundColor: '#f0f0f0',
     borderRadius: 8,
-    padding: 4,
+    padding: 3,
   },
   modeButton: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 6,
     alignItems: 'center',
   },
@@ -412,7 +544,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   modeButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
     color: '#666',
   },
@@ -421,13 +553,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   addressContainer: {
-    marginBottom: 12,
-  },
-  addressLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   addressInput: {
     backgroundColor: '#f8f9fa',
@@ -435,23 +561,17 @@ const styles = StyleSheet.create({
     borderColor: '#ddd',
     borderRadius: 8,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
+    paddingVertical: 10,
+    fontSize: 15,
     color: '#333',
-  },
-  addressHint: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 6,
-    fontStyle: 'italic',
   },
   locationBox: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f8f9fa',
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
-    marginBottom: 12,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#eee',
   },
@@ -463,38 +583,42 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   locationLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#666',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   locationText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#333',
     fontWeight: '500',
   },
   locationTextSuccess: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#4CAF50',
     fontWeight: '600',
   },
   locationTextError: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#e74c3c',
   },
   locationButton: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  radiusContainer: {
-    marginBottom: 12,
+  radiusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   radiusLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 8,
+    marginRight: 8,
+    width: 50,
   },
   radiusPicker: {
+    flex: 1,
     backgroundColor: '#f5f5f5',
     borderRadius: 8,
     overflow: 'hidden',
@@ -503,8 +627,46 @@ const styles = StyleSheet.create({
     height: 44,
   },
   searchButton: {
-    marginTop: 4,
+    marginTop: 2,
   },
+
+  // Compact search bar (map mode, collapsed)
+  compactSearch: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  compactSearchContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  compactSearchIcon: {
+    fontSize: 16,
+    marginRight: 10,
+  },
+  compactSearchTextContainer: {
+    flex: 1,
+  },
+  compactSearchText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  compactSearchRadius: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 1,
+  },
+  compactSearchExpand: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4a90d9',
+    paddingLeft: 12,
+  },
+
+  // Results info
   resultsInfo: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -515,6 +677,8 @@ const styles = StyleSheet.create({
     color: '#4a90d9',
     fontWeight: '500',
   },
+
+  // List styles
   list: {
     padding: 16,
     flexGrow: 1,
@@ -523,6 +687,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#e8f4fd',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginTop: 6,
+  },
+  scheduleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#e67e22',
+  },
+  scheduleDateText: {
+    fontSize: 12,
+    color: '#4a90d9',
+    fontWeight: '500',
   },
   skillBadge: {
     marginTop: 4,
