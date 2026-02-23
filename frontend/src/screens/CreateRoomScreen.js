@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Platform } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
-import { Button, Input } from '../components';
+import { Button, Input, OptionSheet } from '../components';
 import { roomsApi } from '../api';
 
 const SKILL_LEVELS = [
@@ -12,6 +11,21 @@ const SKILL_LEVELS = [
   { label: 'Intermediate', value: 'intermediate' },
   { label: 'Advanced', value: 'advanced' },
   { label: 'Expert', value: 'expert' },
+];
+
+const GAME_TYPES = [
+  { label: 'Select game type', value: null },
+  { label: "No-Limit Hold'em", value: 'texas_holdem' },
+  { label: 'Pot-Limit Omaha', value: 'pot_limit_omaha' },
+  { label: 'Omaha Hi-Lo', value: 'omaha_hi_lo' },
+  { label: 'Stud', value: 'stud' },
+  { label: 'Mixed Games', value: 'mixed' },
+  { label: 'Other', value: 'other' },
+];
+
+const GAME_FORMATS = [
+  { label: 'Cash Game', value: 'cash' },
+  { label: 'Tournament', value: 'tournament' },
 ];
 
 export const CreateRoomScreen = ({ navigation }) => {
@@ -23,6 +37,10 @@ export const CreateRoomScreen = ({ navigation }) => {
   const [maxPlayers, setMaxPlayers] = useState('');
   const [buyInInfo, setBuyInInfo] = useState('');
   const [skillLevel, setSkillLevel] = useState(null);
+  const [gameType, setGameType] = useState(null);
+  const [gameFormat, setGameFormat] = useState('cash');
+  const [blindStructure, setBlindStructure] = useState('');
+  const [houseRules, setHouseRules] = useState('');
   const [scheduledAt, setScheduledAt] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -156,6 +174,10 @@ export const CreateRoomScreen = ({ navigation }) => {
         max_players: maxPlayers ? parseInt(maxPlayers, 10) : null,
         buy_in_info: buyInInfo || null,
         skill_level: skillLevel,
+        game_type: gameType,
+        game_format: gameFormat,
+        blind_structure: blindStructure || null,
+        house_rules: houseRules || null,
         scheduled_at: scheduledAtStr,
       };
 
@@ -312,6 +334,60 @@ export const CreateRoomScreen = ({ navigation }) => {
         )}
       </View>
 
+      {/* Game Details Section */}
+      <View style={styles.locationSection}>
+        <Text style={styles.sectionTitle}>Game Details</Text>
+        <Text style={styles.sectionHint}>
+          What kind of poker are you playing?
+        </Text>
+
+        <OptionSheet
+          label="Game Type"
+          options={GAME_TYPES}
+          selectedValue={gameType}
+          onValueChange={setGameType}
+          placeholder="Select game type"
+        />
+
+        <Text style={styles.label}>Format</Text>
+        <View style={styles.formatToggle}>
+          {GAME_FORMATS.map((f) => (
+            <TouchableOpacity
+              key={f.value}
+              style={[
+                styles.formatButton,
+                gameFormat === f.value && styles.formatButtonActive,
+              ]}
+              onPress={() => setGameFormat(f.value)}
+            >
+              <Text
+                style={[
+                  styles.formatButtonText,
+                  gameFormat === f.value && styles.formatButtonTextActive,
+                ]}
+              >
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Input
+          label="Blind Structure"
+          value={blindStructure}
+          onChangeText={setBlindStructure}
+          placeholder="$1/$2"
+        />
+
+        <Input
+          label="House Rules"
+          value={houseRules}
+          onChangeText={setHouseRules}
+          placeholder="Straddle allowed, no rabbit hunting..."
+          multiline
+        />
+      </View>
+
       <Input
         label="Max Players"
         value={maxPlayers}
@@ -327,18 +403,13 @@ export const CreateRoomScreen = ({ navigation }) => {
         placeholder="$20-$50 friendly stakes"
       />
 
-      <Text style={styles.label}>Skill Level</Text>
-      <View style={styles.pickerContainer}>
-        <Picker
-          selectedValue={skillLevel}
-          onValueChange={setSkillLevel}
-          style={styles.picker}
-        >
-          {SKILL_LEVELS.map((level) => (
-            <Picker.Item key={level.value} label={level.label} value={level.value} />
-          ))}
-        </Picker>
-      </View>
+      <OptionSheet
+        label="Skill Level"
+        options={SKILL_LEVELS}
+        selectedValue={skillLevel}
+        onValueChange={setSkillLevel}
+        placeholder="Any skill level"
+      />
 
       <Button
         title="Create Room"
@@ -441,21 +512,41 @@ const styles = StyleSheet.create({
     color: '#e74c3c',
     fontWeight: '500',
   },
+  formatToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 16,
+  },
+  formatButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  formatButtonActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  formatButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+  },
+  formatButtonTextActive: {
+    color: '#1a1a2e',
+    fontWeight: '600',
+  },
   label: {
     fontSize: 14,
     fontWeight: '600',
     color: '#333',
     marginBottom: 6,
-  },
-  pickerContainer: {
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  picker: {
-    height: 50,
   },
   button: {
     marginTop: 12,

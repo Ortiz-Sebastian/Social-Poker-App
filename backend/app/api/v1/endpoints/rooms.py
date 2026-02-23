@@ -6,7 +6,7 @@ from datetime import datetime
 from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_MakePoint, ST_SetSRID
 
 from app.core.database import get_db
-from app.schemas.room import Room, RoomCreate, RoomUpdate, RoomWithDistance, RoomPublic, RoomPrivate, RoomStatusUpdate
+from app.schemas.room import Room, RoomCreate, RoomUpdate, RoomWithDistance, RoomPublic, RoomPrivate, RoomStatusUpdate, GameType, GameFormat
 from app.models.room import Room as RoomModel, RoomStatus
 from app.models.room_member import RoomMember as RoomMemberModel, RoomMemberStatus
 from app.models.user import User
@@ -22,11 +22,47 @@ from app.utils.location_security import (
 
 router = APIRouter()
 
-# Constants for geospatial queries
-MAX_RADIUS_METERS = 100000  # 100km maximum radius
-DEFAULT_RADIUS_METERS = 10000  # 10km default radius
-MAX_RESULTS = 50  # Maximum results per page
-DEFAULT_LIMIT = 20  # Default results per page
+MAX_RADIUS_METERS = 100000
+DEFAULT_RADIUS_METERS = 10000
+MAX_RESULTS = 50
+DEFAULT_LIMIT = 20
+
+
+def _room_base_dict(room) -> dict:
+    """Extract common room fields into a dict for response construction."""
+    return {
+        "id": room.id,
+        "name": room.name,
+        "description": room.description,
+        "address": room.address,
+        "buy_in_info": room.buy_in_info,
+        "max_players": room.max_players,
+        "skill_level": room.skill_level,
+        "game_type": room.game_type,
+        "game_format": room.game_format,
+        "blind_structure": room.blind_structure,
+        "house_rules": room.house_rules,
+        "host_id": room.host_id,
+        "status": room.status,
+        "scheduled_at": room.scheduled_at,
+        "is_active": room.is_active,
+        "created_at": room.created_at,
+        "updated_at": room.updated_at,
+        "finished_at": room.finished_at,
+    }
+
+
+def _extract_public_coords(db, room) -> tuple[float | None, float | None]:
+    """Extract public lat/lon from a PostGIS geography column."""
+    if not room.public_location:
+        return None, None
+    row = db.execute(
+        text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
+        {"id": room.id},
+    ).fetchone()
+    if row:
+        return float(row[1]), float(row[0])
+    return None, None
 
 
 @router.post("/", response_model=RoomPublic, status_code=status.HTTP_201_CREATED)
@@ -41,7 +77,6 @@ async def create_room(
     - Exact location is stored privately (only shown to approved members)
     - Public/approximate location is generated automatically (shown to everyone)
     """
-    # Create room model instance
     room = RoomModel(
         name=room_data.name,
         description=room_data.description,
@@ -49,20 +84,22 @@ async def create_room(
         buy_in_info=room_data.buy_in_info,
         max_players=room_data.max_players,
         skill_level=room_data.skill_level,
+        scheduled_at=room_data.scheduled_at,
+        game_type=room_data.game_type,
+        game_format=room_data.game_format,
+        blind_structure=room_data.blind_structure,
+        house_rules=room_data.house_rules,
         host_id=current_user.id,
         is_active=True
     )
     
-    # Set exact location if coordinates provided
     if room_data.latitude is not None and room_data.longitude is not None:
         lat = float(room_data.latitude)
         lon = float(room_data.longitude)
         
-        # Create exact location WKT
         location_wkt = create_postgis_point_wkt(lon, lat)
         room.location = location_wkt
         
-        # Generate and set public/approximate location
         public_lat, public_lon = generate_public_location(lat, lon)
         public_location_wkt = create_postgis_point_wkt(public_lon, public_lat)
         room.public_location = public_location_wkt
@@ -71,34 +108,8 @@ async def create_room(
     db.commit()
     db.refresh(room)
     
-    # Build response with public location
-    response = {
-        "id": room.id,
-        "name": room.name,
-        "description": room.description,
-        "public_latitude": None,
-        "public_longitude": None,
-        "address": room.address,
-        "buy_in_info": room.buy_in_info,
-        "max_players": room.max_players,
-        "skill_level": room.skill_level,
-        "host_id": room.host_id,
-        "status": room.status,
-        "is_active": room.is_active,
-        "created_at": room.created_at,
-        "updated_at": room.updated_at,
-        "finished_at": room.finished_at
-    }
-    
-    # Extract public location coordinates
-    if room.public_location:
-        point_text = db.execute(
-            text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
-            {"id": room.id}
-        ).fetchone()
-        if point_text:
-            response["public_longitude"] = float(point_text[0])
-            response["public_latitude"] = float(point_text[1])
+    pub_lat, pub_lon = _extract_public_coords(db, room)
+    response = {**_room_base_dict(room), "public_latitude": pub_lat, "public_longitude": pub_lon}
     
     return RoomPublic(**response)
 
@@ -135,35 +146,13 @@ async def get_my_rooms(
     
     result = []
     for room in rooms:
+        pub_lat, pub_lon = _extract_public_coords(db, room)
         room_data = {
-            "id": room.id,
-            "name": room.name,
-            "description": room.description,
-            "public_latitude": None,
-            "public_longitude": None,
-            "address": room.address,
-            "buy_in_info": room.buy_in_info,
-            "max_players": room.max_players,
-            "skill_level": room.skill_level,
-            "host_id": room.host_id,
-            "status": room.status,
-            "is_active": room.is_active,
-            "created_at": room.created_at,
-            "updated_at": room.updated_at,
-            "finished_at": room.finished_at,
+            **_room_base_dict(room),
+            "public_latitude": pub_lat,
+            "public_longitude": pub_lon,
             "is_host": room.host_id == current_user.id,
         }
-        
-        # Extract public location coordinates
-        if room.public_location:
-            point_text = db.execute(
-                text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
-                {"id": room.id}
-            ).fetchone()
-            if point_text:
-                room_data["public_longitude"] = float(point_text[0])
-                room_data["public_latitude"] = float(point_text[1])
-        
         result.append(RoomPublic(**room_data))
     
     return result
@@ -257,84 +246,35 @@ async def list_rooms(
             distance_expr
         ).offset(skip).limit(limit).all()
         
-        # Convert to response format with PUBLIC location only
         result = []
         for room, distance in rooms_with_distance:
-            # SECURITY: Apply distance fuzzing and minimum clamping to prevent triangulation
-            # Fuzzing adds ±5-15% random noise, clamping ensures min 100m
             safe_distance = None
             if distance is not None:
                 safe_distance = fuzz_distance(clamp_minimum_distance(distance))
             
+            pub_lat, pub_lon = _extract_public_coords(db, room)
             room_dict = {
-                "id": room.id,
-                "name": room.name,
-                "description": room.description,
-                "public_latitude": None,
-                "public_longitude": None,
-                "address": room.address,
-                "buy_in_info": room.buy_in_info,
-                "max_players": room.max_players,
-                "skill_level": room.skill_level,
-                "host_id": room.host_id,
-                "status": room.status,
-                "is_active": room.is_active,
-                "created_at": room.created_at,
-                "updated_at": room.updated_at,
-                "finished_at": room.finished_at,
-                "distance_meters": safe_distance
+                **_room_base_dict(room),
+                "public_latitude": pub_lat,
+                "public_longitude": pub_lon,
+                "distance_meters": safe_distance,
             }
-            
-            # Extract PUBLIC location coordinates only
-            if room.public_location:
-                point_text = db.execute(
-                    text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
-                    {"id": room.id}
-                ).fetchone()
-                if point_text:
-                    room_dict["public_longitude"] = float(point_text[0])
-                    room_dict["public_latitude"] = float(point_text[1])
-            
             result.append(RoomWithDistance(**room_dict))
         
         return result
     
     else:
-        # No location filtering - return all active rooms (paginated)
         rooms = query.offset(skip).limit(limit).all()
         
-        # Convert to response format with PUBLIC location only
         result = []
         for room in rooms:
+            pub_lat, pub_lon = _extract_public_coords(db, room)
             room_dict = {
-                "id": room.id,
-                "name": room.name,
-                "description": room.description,
-                "public_latitude": None,
-                "public_longitude": None,
-                "address": room.address,
-                "buy_in_info": room.buy_in_info,
-                "max_players": room.max_players,
-                "skill_level": room.skill_level,
-                "host_id": room.host_id,
-                "status": room.status,
-                "is_active": room.is_active,
-                "created_at": room.created_at,
-                "updated_at": room.updated_at,
-                "finished_at": room.finished_at,
-                "distance_meters": None
+                **_room_base_dict(room),
+                "public_latitude": pub_lat,
+                "public_longitude": pub_lon,
+                "distance_meters": None,
             }
-            
-            # Extract PUBLIC location coordinates only
-            if room.public_location:
-                point_text = db.execute(
-                    text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
-                    {"id": room.id}
-                ).fetchone()
-                if point_text:
-                    room_dict["public_longitude"] = float(point_text[0])
-                    room_dict["public_latitude"] = float(point_text[1])
-            
             result.append(RoomWithDistance(**room_dict))
         
         return result
@@ -355,34 +295,8 @@ async def get_room(room_id: int, db: Session = Depends(get_db)):
             detail="Room not found"
         )
     
-    # Build response with PUBLIC location only
-    response = {
-        "id": room.id,
-        "name": room.name,
-        "description": room.description,
-        "public_latitude": None,
-        "public_longitude": None,
-        "address": room.address,
-        "buy_in_info": room.buy_in_info,
-        "max_players": room.max_players,
-        "skill_level": room.skill_level,
-        "host_id": room.host_id,
-        "status": room.status,
-        "is_active": room.is_active,
-        "created_at": room.created_at,
-        "updated_at": room.updated_at,
-        "finished_at": room.finished_at
-    }
-    
-    # Extract PUBLIC location coordinates
-    if room.public_location:
-        point_text = db.execute(
-            text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
-            {"id": room.id}
-        ).fetchone()
-        if point_text:
-            response["public_longitude"] = float(point_text[0])
-            response["public_latitude"] = float(point_text[1])
+    pub_lat, pub_lon = _extract_public_coords(db, room)
+    response = {**_room_base_dict(room), "public_latitude": pub_lat, "public_longitude": pub_lon}
     
     return RoomPublic(**response)
 
@@ -436,46 +350,23 @@ async def get_room_private(
     
     room = db.query(RoomModel).filter(RoomModel.id == room_id).first()
     
-    # Build response with EXACT location
+    pub_lat, pub_lon = _extract_public_coords(db, room)
     response = {
-        "id": room.id,
-        "name": room.name,
-        "description": room.description,
+        **_room_base_dict(room),
         "latitude": None,
         "longitude": None,
-        "public_latitude": None,
-        "public_longitude": None,
-        "address": room.address,
-        "buy_in_info": room.buy_in_info,
-        "max_players": room.max_players,
-        "skill_level": room.skill_level,
-        "host_id": room.host_id,
-        "status": room.status,
-        "is_active": room.is_active,
-        "created_at": room.created_at,
-        "updated_at": room.updated_at,
-        "finished_at": room.finished_at
+        "public_latitude": pub_lat,
+        "public_longitude": pub_lon,
     }
     
-    # Extract EXACT location coordinates
     if room.location:
         point_text = db.execute(
             text("SELECT ST_X(location::geometry), ST_Y(location::geometry) FROM rooms WHERE id = :id"),
-            {"id": room.id}
+            {"id": room.id},
         ).fetchone()
         if point_text:
             response["longitude"] = float(point_text[0])
             response["latitude"] = float(point_text[1])
-    
-    # Also include public location for reference
-    if room.public_location:
-        point_text = db.execute(
-            text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
-            {"id": room.id}
-        ).fetchone()
-        if point_text:
-            response["public_longitude"] = float(point_text[0])
-            response["public_latitude"] = float(point_text[1])
     
     return RoomPrivate(**response)
 
@@ -528,40 +419,14 @@ async def update_room(
     elif 'longitude' in update_data:
         update_data.pop('longitude')
     
-    # Update other fields
     for field, value in update_data.items():
         setattr(room, field, value)
     
     db.commit()
     db.refresh(room)
     
-    # Build response with public location
-    response = {
-        "id": room.id,
-        "name": room.name,
-        "description": room.description,
-        "public_latitude": None,
-        "public_longitude": None,
-        "address": room.address,
-        "buy_in_info": room.buy_in_info,
-        "max_players": room.max_players,
-        "skill_level": room.skill_level,
-        "host_id": room.host_id,
-        "status": room.status,
-        "is_active": room.is_active,
-        "created_at": room.created_at,
-        "updated_at": room.updated_at,
-        "finished_at": room.finished_at
-    }
-    
-    if room.public_location:
-        point_text = db.execute(
-            text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
-            {"id": room.id}
-        ).fetchone()
-        if point_text:
-            response["public_longitude"] = float(point_text[0])
-            response["public_latitude"] = float(point_text[1])
+    pub_lat, pub_lon = _extract_public_coords(db, room)
+    response = {**_room_base_dict(room), "public_latitude": pub_lat, "public_longitude": pub_lon}
     
     return RoomPublic(**response)
 
@@ -832,43 +697,26 @@ async def update_room_status(
             detail=f"Invalid status transition from {current_status.value} to {new_status.value}"
         )
     
-    # Update status
+    if current_status == RoomStatus.SCHEDULED and new_status == RoomStatus.ACTIVE and room.scheduled_at:
+        if datetime.utcnow() < room.scheduled_at:
+            time_remaining = room.scheduled_at - datetime.utcnow()
+            hours = int(time_remaining.total_seconds() // 3600)
+            minutes = int((time_remaining.total_seconds() % 3600) // 60)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot start game before scheduled time. Starts in {hours}h {minutes}m."
+            )
+    
     room.status = new_status
     
-    # Set finished_at timestamp if marking as finished
     if new_status == RoomStatus.FINISHED:
         room.finished_at = datetime.utcnow()
     
     db.commit()
     db.refresh(room)
     
-    # Build response with public location only
-    response = {
-        "id": room.id,
-        "name": room.name,
-        "description": room.description,
-        "public_latitude": None,
-        "public_longitude": None,
-        "address": room.address,
-        "buy_in_info": room.buy_in_info,
-        "max_players": room.max_players,
-        "skill_level": room.skill_level,
-        "host_id": room.host_id,
-        "status": room.status,
-        "is_active": room.is_active,
-        "created_at": room.created_at,
-        "updated_at": room.updated_at,
-        "finished_at": room.finished_at
-    }
-    
-    if room.public_location:
-        point_text = db.execute(
-            text("SELECT ST_X(public_location::geometry), ST_Y(public_location::geometry) FROM rooms WHERE id = :id"),
-            {"id": room.id}
-        ).fetchone()
-        if point_text:
-            response["public_longitude"] = float(point_text[0])
-            response["public_latitude"] = float(point_text[1])
+    pub_lat, pub_lon = _extract_public_coords(db, room)
+    response = {**_room_base_dict(room), "public_latitude": pub_lat, "public_longitude": pub_lon}
     
     return RoomPublic(**response)
 

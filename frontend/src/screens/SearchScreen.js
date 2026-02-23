@@ -9,6 +9,24 @@ import { Picker } from '@react-native-picker/picker';
 import { Card, CardTitle, CardSubtitle, Button, Badge, RoomMapView } from '../components';
 import { roomsApi } from '../api';
 
+const GAME_TYPE_SHORT = {
+  texas_holdem: "NL Hold'em",
+  pot_limit_omaha: 'PLO',
+  omaha_hi_lo: 'O8',
+  stud: 'Stud',
+  mixed: 'Mixed',
+  other: 'Other',
+};
+
+const formatGameTag = (room) => {
+  const parts = [];
+  if (room.blind_structure) parts.push(room.blind_structure);
+  if (room.game_type) parts.push(GAME_TYPE_SHORT[room.game_type] || room.game_type);
+  if (room.max_players) parts.push(`${room.max_players}-max`);
+  if (room.game_format) parts.push(room.game_format === 'cash' ? 'Cash' : 'Tournament');
+  return parts.length > 0 ? parts.join(' \u00B7 ') : null;
+};
+
 const getTimeUntil = (dateStr) => {
   if (!dateStr) return null;
   const ms = new Date(dateStr).getTime() - Date.now();
@@ -207,12 +225,18 @@ export const SearchScreen = ({ navigation }) => {
 
   const renderRoom = ({ item }) => {
     const timeUntil = getTimeUntil(item.scheduled_at);
+    const gameTag = formatGameTag(item);
     return (
       <Card onPress={() => navigation.navigate('RoomDetail', { roomId: item.id })}>
         <View style={styles.cardHeader}>
           <CardTitle>{item.name}</CardTitle>
           <Badge text={item.status} variant={item.status} />
         </View>
+        {gameTag && (
+          <View style={styles.gameTagRow}>
+            <Text style={styles.gameTagText}>{gameTag}</Text>
+          </View>
+        )}
         {timeUntil && (
           <View style={styles.scheduleRow}>
             <Text style={styles.scheduleText}>{timeUntil}</Text>
@@ -230,7 +254,7 @@ export const SearchScreen = ({ navigation }) => {
         )}
         <CardSubtitle>
           {item.max_players ? `Max ${item.max_players} players` : 'No player limit'}
-          {item.buy_in_info && ` • ${item.buy_in_info}`}
+          {item.buy_in_info && ` \u2022 ${item.buy_in_info}`}
         </CardSubtitle>
         {item.description && (
           <Text style={styles.description} numberOfLines={2}>
@@ -687,6 +711,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  gameTagRow: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  gameTagText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.3,
   },
   scheduleRow: {
     flexDirection: 'row',

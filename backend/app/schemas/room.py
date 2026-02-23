@@ -21,16 +21,34 @@ class SkillLevel(str, Enum):
     EXPERT = "expert"
 
 
+class GameType(str, Enum):
+    TEXAS_HOLDEM = "texas_holdem"
+    POT_LIMIT_OMAHA = "pot_limit_omaha"
+    OMAHA_HI_LO = "omaha_hi_lo"
+    STUD = "stud"
+    MIXED = "mixed"
+    OTHER = "other"
+
+
+class GameFormat(str, Enum):
+    CASH = "cash"
+    TOURNAMENT = "tournament"
+
+
 class RoomBase(BaseModel):
     name: str
     description: Optional[str] = None
-    # API accepts lat/long for convenience, backend converts to PostGIS Geography Point
     latitude: Optional[Decimal] = None
     longitude: Optional[Decimal] = None
     address: Optional[str] = None
-    buy_in_info: Optional[str] = None  # Informational only
+    buy_in_info: Optional[str] = None
     max_players: Optional[int] = None
-    skill_level: Optional[SkillLevel] = None  # Recommended skill level for the room
+    skill_level: Optional[SkillLevel] = None
+    scheduled_at: Optional[datetime] = None
+    game_type: Optional[GameType] = None
+    game_format: Optional[GameFormat] = None
+    blind_structure: Optional[str] = None
+    house_rules: Optional[str] = None
 
     @field_validator('latitude')
     @classmethod
@@ -62,6 +80,11 @@ class RoomUpdate(BaseModel):
     buy_in_info: Optional[str] = None
     max_players: Optional[int] = None
     skill_level: Optional[SkillLevel] = None
+    scheduled_at: Optional[datetime] = None
+    game_type: Optional[GameType] = None
+    game_format: Optional[GameFormat] = None
+    blind_structure: Optional[str] = None
+    house_rules: Optional[str] = None
     is_active: Optional[bool] = None
     status: Optional[RoomStatus] = None
 
@@ -88,21 +111,23 @@ class RoomPublic(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
-    # Public/approximate location (offset from real location)
     public_latitude: Optional[float] = None
     public_longitude: Optional[float] = None
-    # Address shown as general area only (e.g., "Midtown Manhattan")
     address: Optional[str] = None
     buy_in_info: Optional[str] = None
     max_players: Optional[int] = None
     skill_level: Optional[SkillLevel] = None
+    game_type: Optional[GameType] = None
+    game_format: Optional[GameFormat] = None
+    blind_structure: Optional[str] = None
+    house_rules: Optional[str] = None
     host_id: int
     status: RoomStatus = RoomStatus.SCHEDULED
+    scheduled_at: Optional[datetime] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
     finished_at: Optional[datetime] = None
-    # Flag to indicate if the current user is the host (set in API responses)
     is_host: Optional[bool] = None
 
     class Config:

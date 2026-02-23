@@ -5,7 +5,7 @@ from datetime import datetime
 import enum
 
 from app.core.database import Base
-from app.models.enums import SkillLevel
+from app.models.enums import SkillLevel, GameType, GameFormat
 
 
 class RoomStatus(str, enum.Enum):
@@ -54,11 +54,26 @@ class Room(Base):
     # Game details (informational only)
     buy_in_info = Column(String, nullable=True)  # Informational only, not enforced
     max_players = Column(Integer, nullable=True)
+
+    game_type = Column(
+        SQLEnum(GameType, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+        index=True
+    )
+    game_format = Column(
+        SQLEnum(GameFormat, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+        index=True
+    )
+    blind_structure = Column(String, nullable=True)  # e.g. "$1/$2"
+    house_rules = Column(Text, nullable=True)
+    
+    scheduled_at = Column(DateTime, nullable=True)
     
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    finished_at = Column(DateTime, nullable=True)  # When the room was marked as finished
+    finished_at = Column(DateTime, nullable=True)
 
     # Relationships
     host = relationship("User", back_populates="rooms_owned", foreign_keys=[host_id])

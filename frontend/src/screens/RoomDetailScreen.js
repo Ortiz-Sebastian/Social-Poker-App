@@ -31,6 +31,29 @@ const formatScheduledDate = (dateStr) => {
   });
 };
 
+const GAME_TYPE_LABELS = {
+  texas_holdem: "No-Limit Hold'em",
+  pot_limit_omaha: 'Pot-Limit Omaha',
+  omaha_hi_lo: 'Omaha Hi-Lo',
+  stud: 'Stud',
+  mixed: 'Mixed Games',
+  other: 'Other',
+};
+
+const GAME_FORMAT_LABELS = {
+  cash: 'Cash Game',
+  tournament: 'Tournament',
+};
+
+const formatGameSummary = (room) => {
+  const parts = [];
+  if (room.blind_structure) parts.push(room.blind_structure);
+  if (room.game_type) parts.push(GAME_TYPE_LABELS[room.game_type] || room.game_type);
+  if (room.max_players) parts.push(`${room.max_players}-max`);
+  if (room.game_format) parts.push(GAME_FORMAT_LABELS[room.game_format] || room.game_format);
+  return parts.join(' \u00B7 ');
+};
+
 export const RoomDetailScreen = ({ route, navigation }) => {
   const { roomId } = route.params;
   const { user } = useAuth();
@@ -206,6 +229,12 @@ export const RoomDetailScreen = ({ route, navigation }) => {
           </View>
         )}
 
+        {(room.game_type || room.blind_structure || room.game_format) && (
+          <View style={styles.gameSummaryBox}>
+            <Text style={styles.gameSummaryText}>{formatGameSummary(room)}</Text>
+          </View>
+        )}
+
         {room.description && (
           <Text style={styles.description}>{room.description}</Text>
         )}
@@ -224,6 +253,27 @@ export const RoomDetailScreen = ({ route, navigation }) => {
         )}
 
         <CardBody>
+          {room.game_type && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Game:</Text>
+              <Text style={styles.infoValue}>{GAME_TYPE_LABELS[room.game_type] || room.game_type}</Text>
+            </View>
+          )}
+
+          {room.game_format && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Format:</Text>
+              <Text style={styles.infoValue}>{GAME_FORMAT_LABELS[room.game_format] || room.game_format}</Text>
+            </View>
+          )}
+
+          {room.blind_structure && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Blinds:</Text>
+              <Text style={styles.infoValue}>{room.blind_structure}</Text>
+            </View>
+          )}
+
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Max Players:</Text>
             <Text style={styles.infoValue}>{room.max_players || 'No limit'}</Text>
@@ -245,6 +295,13 @@ export const RoomDetailScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
         </CardBody>
+
+        {room.house_rules && (
+          <View style={styles.houseRulesBox}>
+            <Text style={styles.houseRulesLabel}>House Rules</Text>
+            <Text style={styles.houseRulesText}>{room.house_rules}</Text>
+          </View>
+        )}
       </Card>
 
       {/* Location Card */}
@@ -536,6 +593,41 @@ const styles = StyleSheet.create({
     color: '#999',
     fontStyle: 'italic',
     marginTop: 4,
+  },
+  gameSummaryBox: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 10,
+  },
+  gameSummaryText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  houseRulesBox: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#4a90d9',
+  },
+  houseRulesLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4a90d9',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  houseRulesText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
   },
   scheduleBox: {
     backgroundColor: '#e8f4fd',
