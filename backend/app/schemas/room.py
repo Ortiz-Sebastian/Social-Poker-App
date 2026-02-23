@@ -42,6 +42,8 @@ class RoomBase(BaseModel):
     longitude: Optional[Decimal] = None
     address: Optional[str] = None
     buy_in_info: Optional[str] = None
+    buy_in_min: Optional[int] = None
+    buy_in_max: Optional[int] = None
     max_players: Optional[int] = None
     skill_level: Optional[SkillLevel] = None
     scheduled_at: Optional[datetime] = None
@@ -78,6 +80,8 @@ class RoomUpdate(BaseModel):
     longitude: Optional[Decimal] = None
     address: Optional[str] = None
     buy_in_info: Optional[str] = None
+    buy_in_min: Optional[int] = None
+    buy_in_max: Optional[int] = None
     max_players: Optional[int] = None
     skill_level: Optional[SkillLevel] = None
     scheduled_at: Optional[datetime] = None
@@ -115,7 +119,10 @@ class RoomPublic(BaseModel):
     public_longitude: Optional[float] = None
     address: Optional[str] = None
     buy_in_info: Optional[str] = None
+    buy_in_min: Optional[int] = None
+    buy_in_max: Optional[int] = None
     max_players: Optional[int] = None
+    member_count: Optional[int] = None
     skill_level: Optional[SkillLevel] = None
     game_type: Optional[GameType] = None
     game_format: Optional[GameFormat] = None

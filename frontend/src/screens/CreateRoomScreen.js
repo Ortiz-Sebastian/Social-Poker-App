@@ -36,6 +36,8 @@ export const CreateRoomScreen = ({ navigation }) => {
   const [longitude, setLongitude] = useState('');
   const [maxPlayers, setMaxPlayers] = useState('');
   const [buyInInfo, setBuyInInfo] = useState('');
+  const [buyInMin, setBuyInMin] = useState('');
+  const [buyInMax, setBuyInMax] = useState('');
   const [skillLevel, setSkillLevel] = useState(null);
   const [gameType, setGameType] = useState(null);
   const [gameFormat, setGameFormat] = useState('cash');
@@ -173,6 +175,8 @@ export const CreateRoomScreen = ({ navigation }) => {
         longitude: lon,
         max_players: maxPlayers ? parseInt(maxPlayers, 10) : null,
         buy_in_info: buyInInfo || null,
+        buy_in_min: buyInMin ? parseInt(buyInMin, 10) : null,
+        buy_in_max: buyInMax ? parseInt(buyInMax, 10) : null,
         skill_level: skillLevel,
         game_type: gameType,
         game_format: gameFormat,
@@ -396,12 +400,40 @@ export const CreateRoomScreen = ({ navigation }) => {
         keyboardType="number-pad"
       />
 
-      <Input
-        label="Buy-in Info (informational only)"
-        value={buyInInfo}
-        onChangeText={setBuyInInfo}
-        placeholder="$20-$50 friendly stakes"
-      />
+      <View style={styles.locationSection}>
+        <Text style={styles.sectionTitle}>Buy-in (informational only)</Text>
+        <Text style={styles.sectionHint}>
+          Helps players find games at their comfort level
+        </Text>
+
+        <View style={styles.buyInRow}>
+          <View style={styles.buyInField}>
+            <Input
+              label="Min ($)"
+              value={buyInMin}
+              onChangeText={setBuyInMin}
+              placeholder="20"
+              keyboardType="number-pad"
+            />
+          </View>
+          <View style={styles.buyInField}>
+            <Input
+              label="Max ($)"
+              value={buyInMax}
+              onChangeText={setBuyInMax}
+              placeholder="100"
+              keyboardType="number-pad"
+            />
+          </View>
+        </View>
+
+        <Input
+          label="Description"
+          value={buyInInfo}
+          onChangeText={setBuyInInfo}
+          placeholder="$20-$50 friendly stakes"
+        />
+      </View>
 
       <OptionSheet
         label="Skill Level"
@@ -541,6 +573,13 @@ const styles = StyleSheet.create({
   formatButtonTextActive: {
     color: '#1a1a2e',
     fontWeight: '600',
+  },
+  buyInRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  buyInField: {
+    flex: 1,
   },
   label: {
     fontSize: 14,

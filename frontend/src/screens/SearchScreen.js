@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, RefreshControl, Alert,
-  TouchableOpacity, TextInput, Animated, Keyboard, Platform,
+  TouchableOpacity, TextInput, Keyboard, Platform, ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
@@ -17,6 +17,30 @@ const GAME_TYPE_SHORT = {
   mixed: 'Mixed',
   other: 'Other',
 };
+
+const GAME_TYPE_FILTERS = [
+  { label: 'All', value: null },
+  { label: "Hold'em", value: 'texas_holdem' },
+  { label: 'PLO', value: 'pot_limit_omaha' },
+  { label: 'O8', value: 'omaha_hi_lo' },
+  { label: 'Stud', value: 'stud' },
+  { label: 'Mixed', value: 'mixed' },
+  { label: 'Other', value: 'other' },
+];
+
+const FORMAT_FILTERS = [
+  { label: 'All', value: null },
+  { label: 'Cash', value: 'cash' },
+  { label: 'Tournament', value: 'tournament' },
+];
+
+const STAKES_FILTERS = [
+  { label: 'Any', value: null },
+  { label: 'Micro ($0-$25)', value: { min: 0, max: 25 } },
+  { label: 'Low ($25-$100)', value: { min: 25, max: 100 } },
+  { label: 'Mid ($100-$500)', value: { min: 100, max: 500 } },
+  { label: 'High ($500+)', value: { min: 500, max: null } },
+];
 
 const formatGameTag = (room) => {
   const parts = [];
@@ -60,6 +84,18 @@ const VIEW_MODES = {
   MAP: 'map',
 };
 
+const FilterChip = ({ label, active, onPress }) => (
+  <TouchableOpacity
+    style={[styles.filterChip, active && styles.filterChipActive]}
+    onPress={onPress}
+    activeOpacity={0.7}
+  >
+    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
+
 export const SearchScreen = ({ navigation }) => {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -76,9 +112,44 @@ export const SearchScreen = ({ navigation }) => {
   const [searchAddress, setSearchAddress] = useState('');
   const [radius, setRadius] = useState(10000);
 
+  // Filter state
+  const [filtersVisible, setFiltersVisible] = useState(false);
+  const [filterGameType, setFilterGameType] = useState(null);
+  const [filterFormat, setFilterFormat] = useState(null);
+  const [filterStakes, setFilterStakes] = useState(null);
+  const [filterHasSeats, setFilterHasSeats] = useState(false);
+
   // Map state
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [searchExpanded, setSearchExpanded] = useState(true);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterGameType) count++;
+    if (filterFormat) count++;
+    if (filterStakes) count++;
+    if (filterHasSeats) count++;
+    return count;
+  }, [filterGameType, filterFormat, filterStakes, filterHasSeats]);
+
+  const clearFilters = () => {
+    setFilterGameType(null);
+    setFilterFormat(null);
+    setFilterStakes(null);
+    setFilterHasSeats(false);
+  };
+
+  const buildFilterParams = () => {
+    const params = {};
+    if (filterGameType) params.game_type = filterGameType;
+    if (filterFormat) params.game_format = filterFormat;
+    if (filterStakes) {
+      if (filterStakes.min != null) params.buy_in_min = filterStakes.min;
+      if (filterStakes.max != null) params.buy_in_max = filterStakes.max;
+    }
+    if (filterHasSeats) params.has_seats = true;
+    return params;
+  };
 
   const getLocation = async () => {
     setLocationLoading(true);
@@ -123,6 +194,7 @@ export const SearchScreen = ({ navigation }) => {
         longitude: coords.longitude,
         radius,
         limit: 50,
+        ...buildFilterParams(),
       });
       const scheduledRooms = data
         .filter((room) => room.status === 'scheduled')
@@ -151,7 +223,6 @@ export const SearchScreen = ({ navigation }) => {
     setHasSearched(true);
 
     try {
-      // Geocode client-side so the map knows where to center
       try {
         const geocoded = await Location.geocodeAsync(searchAddress.trim());
         if (geocoded.length > 0) {
@@ -166,6 +237,7 @@ export const SearchScreen = ({ navigation }) => {
         address: searchAddress.trim(),
         radius,
         limit: 50,
+        ...buildFilterParams(),
       });
       const scheduledRooms = data
         .filter((room) => room.status === 'scheduled')
@@ -253,7 +325,9 @@ export const SearchScreen = ({ navigation }) => {
           <Badge text={item.skill_level} variant={item.skill_level} style={styles.skillBadge} />
         )}
         <CardSubtitle>
-          {item.max_players ? `Max ${item.max_players} players` : 'No player limit'}
+          {item.max_players
+            ? `${item.member_count ?? 0}/${item.max_players} players`
+            : `${item.member_count ?? 0} players`}
           {item.buy_in_info && ` \u2022 ${item.buy_in_info}`}
         </CardSubtitle>
         {item.description && (
@@ -293,6 +367,7 @@ export const SearchScreen = ({ navigation }) => {
               </Text>
               <Text style={styles.compactSearchRadius}>
                 {radius / 1000} km • {rooms.length} room{rooms.length !== 1 ? 's' : ''}
+                {activeFilterCount > 0 ? ` • ${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''}` : ''}
               </Text>
             </View>
             <Text style={styles.compactSearchExpand}>Edit</Text>
@@ -396,6 +471,83 @@ export const SearchScreen = ({ navigation }) => {
           }
           style={styles.searchButton}
         />
+
+        {/* Filter toggle */}
+        <TouchableOpacity
+          style={styles.filterToggle}
+          onPress={() => setFiltersVisible(!filtersVisible)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.filterToggleText}>
+            Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+          </Text>
+          <Text style={styles.filterToggleChevron}>
+            {filtersVisible ? '▲' : '▼'}
+          </Text>
+        </TouchableOpacity>
+
+        {filtersVisible && (
+          <View style={styles.filtersContainer}>
+            {/* Game Type */}
+            <Text style={styles.filterLabel}>Game Type</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+              {GAME_TYPE_FILTERS.map((opt) => (
+                <FilterChip
+                  key={String(opt.value)}
+                  label={opt.label}
+                  active={filterGameType === opt.value}
+                  onPress={() => setFilterGameType(opt.value)}
+                />
+              ))}
+            </ScrollView>
+
+            {/* Format */}
+            <Text style={styles.filterLabel}>Format</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+              {FORMAT_FILTERS.map((opt) => (
+                <FilterChip
+                  key={String(opt.value)}
+                  label={opt.label}
+                  active={filterFormat === opt.value}
+                  onPress={() => setFilterFormat(opt.value)}
+                />
+              ))}
+            </ScrollView>
+
+            {/* Stakes */}
+            <Text style={styles.filterLabel}>Stakes Range</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+              {STAKES_FILTERS.map((opt, i) => (
+                <FilterChip
+                  key={i}
+                  label={opt.label}
+                  active={filterStakes === opt.value}
+                  onPress={() => setFilterStakes(opt.value)}
+                />
+              ))}
+            </ScrollView>
+
+            {/* Availability */}
+            <TouchableOpacity
+              style={[styles.availabilityToggle, filterHasSeats && styles.availabilityToggleActive]}
+              onPress={() => setFilterHasSeats(!filterHasSeats)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.availabilityText, filterHasSeats && styles.availabilityTextActive]}>
+                Open seats only
+              </Text>
+              <View style={[styles.toggleIndicator, filterHasSeats && styles.toggleIndicatorActive]}>
+                <Text style={styles.toggleCheck}>{filterHasSeats ? '✓' : ''}</Text>
+              </View>
+            </TouchableOpacity>
+
+            {activeFilterCount > 0 && (
+              <TouchableOpacity onPress={clearFilters} style={styles.clearFilters}>
+                <Text style={styles.clearFiltersText}>Clear all filters</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
     );
   };
@@ -652,6 +804,116 @@ const styles = StyleSheet.create({
   },
   searchButton: {
     marginTop: 2,
+  },
+  filterToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  filterToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4a90d9',
+  },
+  filterToggleChevron: {
+    fontSize: 10,
+    color: '#4a90d9',
+    marginLeft: 6,
+  },
+  filtersContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  chipRow: {
+    marginBottom: 10,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  filterChipActive: {
+    backgroundColor: '#1a1a2e',
+    borderColor: '#1a1a2e',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#555',
+  },
+  filterChipTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  availabilityToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  availabilityToggleActive: {
+    backgroundColor: '#e8f4fd',
+    borderColor: '#4a90d9',
+  },
+  availabilityText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#555',
+  },
+  availabilityTextActive: {
+    color: '#4a90d9',
+    fontWeight: '600',
+  },
+  toggleIndicator: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#ccc',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toggleIndicatorActive: {
+    borderColor: '#4a90d9',
+    backgroundColor: '#4a90d9',
+  },
+  toggleCheck: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  clearFilters: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginTop: 6,
+  },
+  clearFiltersText: {
+    fontSize: 13,
+    color: '#e74c3c',
+    fontWeight: '500',
   },
 
   // Compact search bar (map mode, collapsed)

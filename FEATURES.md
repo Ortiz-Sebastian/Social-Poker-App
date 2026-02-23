@@ -57,8 +57,6 @@
 - [x] Frontend: Show "starts in X hours" on room cards
 - **Priority:** CRITICAL — players need to know when a game is happening; hosts shouldn't start early. Foundational to the coordination loop.
 
------
-## Up Next
 ### Rich Game Format Details
 - [x] Backend: Add structured fields to Room model — `game_type` (enum: texas_holdem, pot_limit_omaha, omaha_hi_lo, stud, mixed, other), `game_format` (enum: cash, tournament), `blind_structure` (string, e.g. "$1/$2"), `house_rules` (text). Table size derived from existing `max_players`.
 - [x] Backend: Migration for new fields
@@ -72,12 +70,15 @@
 - **Priority:** CRITICAL — transforms the app from a generic meetup tool into a poker-specific platform. Every room card should scream "poker."
 
 ### Poker-Specific Search Filters
-- [ ] Frontend: Filter by game type (Hold'em, PLO, Stud, etc.)
-- [ ] Frontend: Filter by stakes range (micro, low, mid, high)
-- [ ] Frontend: Filter by format (cash game vs tournament)
-- [ ] Frontend: Filter by table size
-- [ ] Backend: Add query params to room search endpoint for new filters
+- [x] Frontend: Filter by game type (Hold'em, PLO, Stud, etc.)
+- [x] Frontend: Filter by stakes range (micro, low, mid, high)
+- [x] Frontend: Filter by format (cash game vs tournament)
+- [x] Frontend: Filter by room availability (full, not full, max players etc.)
+- [x] Backend: Add query params to room search endpoint for new filters
 - **Priority:** HIGH — pairs with Game Format Details; makes discovery feel poker-native.
+
+-----
+## Up Next
 
 ### Room Chat / Messaging
 - [ ] Backend: Message model and WebSocket endpoint

@@ -36,6 +36,8 @@ def _room_base_dict(room) -> dict:
         "description": room.description,
         "address": room.address,
         "buy_in_info": room.buy_in_info,
+        "buy_in_min": room.buy_in_min,
+        "buy_in_max": room.buy_in_max,
         "max_players": room.max_players,
         "skill_level": room.skill_level,
         "game_type": room.game_type,
@@ -50,6 +52,14 @@ def _room_base_dict(room) -> dict:
         "updated_at": room.updated_at,
         "finished_at": room.finished_at,
     }
+
+
+def _get_member_count(db: Session, room_id: int) -> int:
+    """Count active members for a room (includes host)."""
+    return db.query(func.count(RoomMemberModel.id)).filter(
+        RoomMemberModel.room_id == room_id,
+        RoomMemberModel.status == RoomMemberStatus.ACTIVE
+    ).scalar() or 0
 
 
 def _extract_public_coords(db, room) -> tuple[float | None, float | None]:
@@ -82,6 +92,8 @@ async def create_room(
         description=room_data.description,
         address=room_data.address,
         buy_in_info=room_data.buy_in_info,
+        buy_in_min=room_data.buy_in_min,
+        buy_in_max=room_data.buy_in_max,
         max_players=room_data.max_players,
         skill_level=room_data.skill_level,
         scheduled_at=room_data.scheduled_at,
@@ -109,7 +121,12 @@ async def create_room(
     db.refresh(room)
     
     pub_lat, pub_lon = _extract_public_coords(db, room)
-    response = {**_room_base_dict(room), "public_latitude": pub_lat, "public_longitude": pub_lon}
+    response = {
+        **_room_base_dict(room),
+        "public_latitude": pub_lat,
+        "public_longitude": pub_lon,
+        "member_count": _get_member_count(db, room.id),
+    }
     
     return RoomPublic(**response)
 
@@ -152,6 +169,7 @@ async def get_my_rooms(
             "public_latitude": pub_lat,
             "public_longitude": pub_lon,
             "is_host": room.host_id == current_user.id,
+            "member_count": _get_member_count(db, room.id),
         }
         result.append(RoomPublic(**room_data))
     
@@ -164,90 +182,104 @@ async def list_rooms(
     longitude: Optional[float] = Query(None, ge=-180, le=180, description="User's longitude"),
     address: Optional[str] = Query(None, min_length=2, max_length=200, description="Address to search (geocoded to coordinates)"),
     radius: Optional[float] = Query(None, gt=0, description="Search radius in meters"),
+    game_type: Optional[str] = Query(None, description="Filter by game type (texas_holdem, pot_limit_omaha, etc.)"),
+    game_format: Optional[str] = Query(None, description="Filter by format (cash, tournament)"),
+    buy_in_min: Optional[int] = Query(None, ge=0, description="Minimum buy-in filter"),
+    buy_in_max: Optional[int] = Query(None, ge=0, description="Maximum buy-in filter"),
+    has_seats: Optional[bool] = Query(None, description="Filter rooms with available seats"),
     skip: int = Query(0, ge=0, description="Number of results to skip"),
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_RESULTS, description="Maximum results to return"),
     db: Session = Depends(get_db)
 ):
     """
-    List active rooms with optional geospatial filtering.
+    List active rooms with optional geospatial and poker-specific filtering.
     
     Location can be provided via:
     - latitude/longitude coordinates (preferred, faster)
     - address string (city, zipcode, or full address - will be geocoded)
     
-    - Queries using REAL location for accurate nearby results
-    - Returns PUBLIC/APPROXIMATE location in response (exact location hidden until approved)
-    - Radius is capped at 100km (100,000 meters)
-    - Results are capped at 50 per page
+    Poker filters:
+    - game_type: texas_holdem, pot_limit_omaha, omaha_hi_lo, stud, mixed, other
+    - game_format: cash, tournament
+    - buy_in_min / buy_in_max: dollar range for buy-in (informational)
+    - has_seats: true to only show rooms with open seats
     """
     from app.utils.geocoding import geocode_address
     
-    # Cap the limit
     limit = min(limit, MAX_RESULTS)
     
-    # If address is provided but no coordinates, geocode the address
     if address and latitude is None and longitude is None:
         coords = geocode_address(address)
         if coords:
             latitude, longitude = coords
-            print(f"Geocoded '{address}' -> lat={latitude}, lon={longitude}")
         else:
-            # Could not geocode address - return empty results or raise error
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Could not find location for address: {address}"
             )
     
-    # Base query for active rooms
-    query = db.query(RoomModel).filter(RoomModel.is_active == True)
-    
-    # If location parameters are provided, apply geospatial filtering
+    # Build base filter conditions
+    filters = [RoomModel.is_active == True]
+
+    if game_type:
+        filters.append(RoomModel.game_type == game_type)
+    if game_format:
+        filters.append(RoomModel.game_format == game_format)
+    if buy_in_min is not None:
+        filters.append(RoomModel.buy_in_max >= buy_in_min)
+    if buy_in_max is not None:
+        filters.append(RoomModel.buy_in_min <= buy_in_max)
+
+    # Availability: subquery to count active members per room
+    member_count_subq = (
+        db.query(
+            RoomMemberModel.room_id,
+            func.count(RoomMemberModel.id).label("member_count")
+        )
+        .filter(RoomMemberModel.status == RoomMemberStatus.ACTIVE)
+        .group_by(RoomMemberModel.room_id)
+        .subquery()
+    )
+
     if latitude is not None and longitude is not None:
-        # Cap radius at maximum, use default if not provided
         if radius is None:
             radius = DEFAULT_RADIUS_METERS
         else:
             radius = min(radius, MAX_RADIUS_METERS)
         
-        # Create a point from user's coordinates
-        # PostGIS uses (longitude, latitude) order for POINT
         user_point = func.ST_SetSRID(
             func.ST_MakePoint(longitude, latitude),
             4326
         )
-        
-        # Cast to geography for accurate distance calculations in meters
         user_geography = func.ST_GeogFromWKB(func.ST_AsBinary(user_point))
         
-        # SECURITY: Calculate distance using PUBLIC location to prevent triangulation attacks
-        # Using real location for distance would allow attackers to triangulate exact position
-        # by making queries from multiple known positions
         distance_expr = func.ST_Distance(
-            RoomModel.public_location,  # Use PUBLIC location to prevent triangulation
+            RoomModel.public_location,
             user_geography
         ).label('distance_meters')
         
-        # SECURITY: Filter using REAL location for accurate results
-        # (filtering doesn't leak exact position, only inclusion/exclusion)
-        # But distance calculation uses public_location
-        rooms_with_distance = db.query(
-            RoomModel,
-            distance_expr
-        ).filter(
-            RoomModel.is_active == True,
-            RoomModel.location.isnot(None),  # Filter on real location for accuracy
-            RoomModel.public_location.isnot(None),  # Must have public location too
-            func.ST_DWithin(
-                RoomModel.location,  # Use real location for filtering
-                user_geography,
-                radius
+        geo_filters = [
+            RoomModel.location.isnot(None),
+            RoomModel.public_location.isnot(None),
+            func.ST_DWithin(RoomModel.location, user_geography, radius)
+        ]
+
+        query = (
+            db.query(RoomModel, distance_expr, member_count_subq.c.member_count)
+            .outerjoin(member_count_subq, RoomModel.id == member_count_subq.c.room_id)
+            .filter(*filters, *geo_filters)
+        )
+
+        if has_seats is True:
+            query = query.filter(
+                (RoomModel.max_players.is_(None)) |
+                (RoomModel.max_players > func.coalesce(member_count_subq.c.member_count, 0))
             )
-        ).order_by(
-            distance_expr
-        ).offset(skip).limit(limit).all()
+
+        rows = query.order_by(distance_expr).offset(skip).limit(limit).all()
         
         result = []
-        for room, distance in rooms_with_distance:
+        for room, distance, m_count in rows:
             safe_distance = None
             if distance is not None:
                 safe_distance = fuzz_distance(clamp_minimum_distance(distance))
@@ -258,22 +290,36 @@ async def list_rooms(
                 "public_latitude": pub_lat,
                 "public_longitude": pub_lon,
                 "distance_meters": safe_distance,
+                "member_count": m_count or 0,
             }
             result.append(RoomWithDistance(**room_dict))
         
         return result
     
     else:
-        rooms = query.offset(skip).limit(limit).all()
+        query = (
+            db.query(RoomModel, member_count_subq.c.member_count)
+            .outerjoin(member_count_subq, RoomModel.id == member_count_subq.c.room_id)
+            .filter(*filters)
+        )
+
+        if has_seats is True:
+            query = query.filter(
+                (RoomModel.max_players.is_(None)) |
+                (RoomModel.max_players > func.coalesce(member_count_subq.c.member_count, 0))
+            )
+
+        rows = query.offset(skip).limit(limit).all()
         
         result = []
-        for room in rooms:
+        for room, m_count in rows:
             pub_lat, pub_lon = _extract_public_coords(db, room)
             room_dict = {
                 **_room_base_dict(room),
                 "public_latitude": pub_lat,
                 "public_longitude": pub_lon,
                 "distance_meters": None,
+                "member_count": m_count or 0,
             }
             result.append(RoomWithDistance(**room_dict))
         
@@ -296,7 +342,12 @@ async def get_room(room_id: int, db: Session = Depends(get_db)):
         )
     
     pub_lat, pub_lon = _extract_public_coords(db, room)
-    response = {**_room_base_dict(room), "public_latitude": pub_lat, "public_longitude": pub_lon}
+    response = {
+        **_room_base_dict(room),
+        "public_latitude": pub_lat,
+        "public_longitude": pub_lon,
+        "member_count": _get_member_count(db, room.id),
+    }
     
     return RoomPublic(**response)
 
@@ -426,7 +477,12 @@ async def update_room(
     db.refresh(room)
     
     pub_lat, pub_lon = _extract_public_coords(db, room)
-    response = {**_room_base_dict(room), "public_latitude": pub_lat, "public_longitude": pub_lon}
+    response = {
+        **_room_base_dict(room),
+        "public_latitude": pub_lat,
+        "public_longitude": pub_lon,
+        "member_count": _get_member_count(db, room.id),
+    }
     
     return RoomPublic(**response)
 
@@ -716,7 +772,12 @@ async def update_room_status(
     db.refresh(room)
     
     pub_lat, pub_lon = _extract_public_coords(db, room)
-    response = {**_room_base_dict(room), "public_latitude": pub_lat, "public_longitude": pub_lon}
+    response = {
+        **_room_base_dict(room),
+        "public_latitude": pub_lat,
+        "public_longitude": pub_lon,
+        "member_count": _get_member_count(db, room.id),
+    }
     
     return RoomPublic(**response)
 

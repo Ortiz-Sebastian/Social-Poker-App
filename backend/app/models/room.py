@@ -53,6 +53,8 @@ class Room(Base):
     
     # Game details (informational only)
     buy_in_info = Column(String, nullable=True)  # Informational only, not enforced
+    buy_in_min = Column(Integer, nullable=True)   # Structured min buy-in for filtering
+    buy_in_max = Column(Integer, nullable=True)   # Structured max buy-in for filtering
     max_players = Column(Integer, nullable=True)
 
     game_type = Column(
